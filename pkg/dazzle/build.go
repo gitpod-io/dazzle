@@ -20,11 +20,14 @@ import (
 // Build builds a Dockerfile with independent layers
 func Build(env *Environment, loc, dockerfile, dst string) error {
 	fullDFN := filepath.Join(loc, dockerfile)
+
+	// compute splitpoints
 	sps, err := findSplitPoints(fullDFN)
 	if err != nil {
 		return err
 	}
 
+	// split off base dockerfile
 	var builds []string
 	baseSPS := sps[0]
 	bd, err := splitDockerfile(fullDFN, baseSPS, "")
@@ -33,6 +36,7 @@ func Build(env *Environment, loc, dockerfile, dst string) error {
 	}
 	builds = append(builds, bd)
 
+	// create build context
 	fns, err := ioutil.ReadDir(loc)
 	if err != nil {
 		return err
@@ -49,6 +53,7 @@ func Build(env *Environment, loc, dockerfile, dst string) error {
 	}
 	fmt.Printf("created build context in %s\n", buildctxFn)
 
+	// build base image
 	buildctx, err := os.OpenFile(buildctxFn, os.O_RDONLY, 0644)
 	if err != nil {
 		return err
@@ -69,6 +74,7 @@ func Build(env *Environment, loc, dockerfile, dst string) error {
 	bresp.Body.Close()
 	buildctx.Close()
 
+	// build addons
 	addons := sps[1:]
 	for _, sp := range addons {
 		bd, err := splitDockerfile(fullDFN, sp, baseImgName)
@@ -79,6 +85,7 @@ func Build(env *Environment, loc, dockerfile, dst string) error {
 		builds = append(builds, bd)
 	}
 
+	// build addons
 	var buildNames []string
 	for _, bd := range builds {
 		buildctx, err := os.OpenFile(buildctxFn, os.O_RDONLY, 0644)
@@ -104,6 +111,7 @@ func Build(env *Environment, loc, dockerfile, dst string) error {
 		buildNames = append(buildNames, buildName)
 	}
 
+	// merge the whole thing
 	return MergeImages(env, dst, baseImgName, buildNames...)
 }
 
