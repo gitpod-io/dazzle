@@ -3,6 +3,7 @@ module github.com/32leaves/dazzle
 go 1.12
 
 require (
+	github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78 // indirect
 	github.com/Microsoft/go-winio v0.4.14 // indirect
 	github.com/docker/distribution v2.7.1+incompatible // indirect
 	github.com/docker/docker v1.14.0-0.20190319215453-e7b5f7dbe98c
@@ -12,7 +13,6 @@ require (
 	github.com/frankban/quicktest v1.5.0 // indirect
 	github.com/golang/snappy v0.0.1 // indirect
 	github.com/gorilla/mux v1.7.3 // indirect
-	github.com/hashicorp/hcl v1.0.0
 	github.com/mholt/archiver v3.1.1+incompatible
 	github.com/moby/buildkit v0.6.1
 	github.com/nwaples/rardecode v1.0.0 // indirect

@@ -10,3 +10,12 @@
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+
+# Goreleaser
+dist/
+
+# Dazzle example
+example/dazzle__*.Dockerfile
+
+# dive log
+dive.log

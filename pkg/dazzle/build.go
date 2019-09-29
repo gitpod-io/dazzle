@@ -36,6 +36,18 @@ func Build(env *Environment, loc, dockerfile, dst string) error {
 	}
 	builds = append(builds, bd)
 
+	// split off the addon dockerfiles (do this prior to creating the context)
+	baseImgName := fmt.Sprintf("dazzle-base:%x", sha256.Sum256([]byte(dst)))
+	addons := sps[1:]
+	for _, sp := range addons {
+		bd, err := splitDockerfile(fullDFN, sp, baseImgName)
+
+		if err != nil {
+			return err
+		}
+		builds = append(builds, bd)
+	}
+
 	// create build context
 	fns, err := ioutil.ReadDir(loc)
 	if err != nil {
@@ -58,7 +70,6 @@ func Build(env *Environment, loc, dockerfile, dst string) error {
 	if err != nil {
 		return err
 	}
-	baseImgName := fmt.Sprintf("dazzle-base:%x", sha256.Sum256([]byte(dst)))
 	bresp, err := env.Client.ImageBuild(env.Context, buildctx, types.ImageBuildOptions{
 		Tags:       []string{baseImgName},
 		PullParent: true,
@@ -73,17 +84,6 @@ func Build(env *Environment, loc, dockerfile, dst string) error {
 	}
 	bresp.Body.Close()
 	buildctx.Close()
-
-	// build addons
-	addons := sps[1:]
-	for _, sp := range addons {
-		bd, err := splitDockerfile(fullDFN, sp, baseImgName)
-
-		if err != nil {
-			return err
-		}
-		builds = append(builds, bd)
-	}
 
 	// build addons
 	var buildNames []string
@@ -166,14 +166,22 @@ func findSplitPoints(dockerfileLoc string) (splitpoints []splitPoint, err error)
 	}
 
 	var (
-		sps []splitPoint
-		cur splitPoint
+		sps       []splitPoint
+		cur       splitPoint
+		fromCount int
 	)
 	cur = splitPoint{
 		StartLine: 0,
 		Name:      "_base",
 	}
 	for _, tkn := range res.AST.Children {
+		if tkn.Value == command.From {
+			fromCount++
+
+			if fromCount > 1 {
+				return nil, fmt.Errorf("cannot use multi-stage builds with dazzle")
+			}
+		}
 		if tkn.Value != command.Label {
 			cur.EndLine = tkn.EndLine
 			continue
