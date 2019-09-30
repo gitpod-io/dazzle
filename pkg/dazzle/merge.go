@@ -11,8 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/docker/cli/cli/config/configfile"
 	docker "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/docker/docker/pkg/term"
 	"github.com/mholt/archiver"
+	"github.com/mitchellh/go-homedir"
+	log "github.com/sirupsen/logrus"
 )
 
 // NewEnvironment creates a new default environment
@@ -24,6 +29,27 @@ func NewEnvironment() (*Environment, error) {
 	}
 	client.NegotiateAPIVersion(ctx)
 
+	home, err := homedir.Dir()
+	if err != nil {
+		return nil, err
+	}
+	home, err = homedir.Expand(home)
+	if err != nil {
+		return nil, err
+	}
+	dockerCfgFN := filepath.Join(home, ".docker", "config.json")
+
+	dockerCfg := configfile.New(dockerCfgFN)
+	if dockerCfgF, err := os.OpenFile(dockerCfgFN, os.O_RDONLY, 0600); err == nil {
+		err := dockerCfg.LoadFromReader(dockerCfgF)
+		dockerCfgF.Close()
+
+		if err != nil {
+			return nil, err
+		}
+		log.WithField("filename", dockerCfgFN).Info("using Docker config")
+	}
+
 	wd := os.Getenv("DAZZLE_WORKDIR")
 	if wd == "" {
 		wd, err = ioutil.TempDir("", "")
@@ -31,19 +57,23 @@ func NewEnvironment() (*Environment, error) {
 			return nil, err
 		}
 	}
+	log.WithField("workdir", wd).Info("working here")
 
 	return &Environment{
-		Out:     os.Stdout,
-		Client:  client,
-		Context: ctx,
-		Workdir: wd,
+		Out:       os.Stdout,
+		Client:    client,
+		DockerCfg: dockerCfg,
+		Context:   ctx,
+		Workdir:   wd,
 	}, nil
 }
 
 // Environment describes the environment in which an image merge is to happen
 type Environment struct {
-	Out     io.Writer
-	Client  *docker.Client
+	Out       io.Writer
+	Client    *docker.Client
+	DockerCfg *configfile.ConfigFile
+
 	Context context.Context
 	Workdir string
 }
@@ -55,7 +85,7 @@ func MergeImages(env *Environment, dest, base string, addons ...string) error {
 	os.Mkdir(wd, 0755)
 
 	// download images
-	fmt.Fprintln(env.Out, "🌟\tsummoning interdimensional portal to make graven images")
+	fmt.Fprintln(env.Out, "🌟\tsummoning interdimensional portal")
 	allimgNames := append(addons, base)
 	img, err := env.Client.ImageSave(env.Context, allimgNames)
 	if err != nil {
@@ -250,7 +280,7 @@ func MergeImages(env *Environment, dest, base string, addons ...string) error {
 	}
 
 	// load it back into the daemon
-	fmt.Fprintln(env.Out, "👹\toffering world to the daemon")
+	fmt.Fprintln(env.Out, "👹\toffering world to daemons")
 	pkg, err := os.OpenFile(pkgfn, os.O_RDONLY, 0644)
 	if err != nil {
 		return err
@@ -261,7 +291,9 @@ func MergeImages(env *Environment, dest, base string, addons ...string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	_, err = io.Copy(env.Out, resp.Body)
+
+	termFd, isTerm := term.GetFdInfo(env.Out)
+	err = jsonmessage.DisplayJSONMessagesStream(resp.Body, env.Out, termFd, isTerm, nil)
 	if err != nil {
 		return err
 	}
@@ -280,7 +312,7 @@ func loadTarExportManifest(fn string) (*tarExportManifest, error) {
 		return nil, err
 	}
 
-	for i, layer := range manifest {
+	for li, layer := range manifest {
 		var cfg layerConfig
 		fc, err := ioutil.ReadFile(filepath.Join(filepath.Dir(fn), layer.Config))
 		if err != nil {
@@ -290,13 +322,18 @@ func loadTarExportManifest(fn string) (*tarExportManifest, error) {
 		if err != nil {
 			return nil, err
 		}
-		for i, h := range cfg.History {
+
+		var newHistory []map[string]interface{}
+		for _, h := range cfg.History {
 			if h["empty_layer"] == true {
-				cfg.History = append(cfg.History[:i], cfg.History[i+1:]...)
+				continue
 			}
+
+			newHistory = append(newHistory, h)
 		}
+		cfg.History = newHistory
 		layer.LoadedConfig = &cfg
-		manifest[i] = layer
+		manifest[li] = layer
 	}
 
 	return &manifest, nil
