@@ -1,6 +1,7 @@
 package dazzle
 
 import (
+	"archive/tar"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -159,6 +160,13 @@ func MergeImages(env *Environment, dest, base string, addons ...string) error {
 			histories = append(histories, addonImg.LoadedConfig.History[i])
 		}
 	}
+	// check for overlap between the images
+	err = checkForOverlap(repoFn, layers, func(thisLayer, otherLayer, fn string) {
+		log.WithField("this-layer", thisLayer).WithField("other-layer", otherLayer).WithField("file", fn).Warn("overlapping layers")
+	})
+	if err != nil {
+		return err
+	}
 
 	// create new image config from base layer config
 	fmt.Fprintln(env.Out, "🔥\tremaking to the world to my liking")
@@ -296,6 +304,38 @@ func MergeImages(env *Environment, dest, base string, addons ...string) error {
 	err = jsonmessage.DisplayJSONMessagesStream(resp.Body, env.Out, termFd, isTerm, nil)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func checkForOverlap(wd string, layers []string, cb func(thisLayer, otherLayer, fn string)) error {
+	idx := make(map[string]string)
+
+	for _, layer := range layers {
+		name := layer
+		err := archiver.Walk(filepath.Join(wd, layer), func(f archiver.File) error {
+			if f.IsDir() {
+				return nil
+			}
+
+			hdr, ok := f.Header.(*tar.Header)
+			if !ok {
+				return fmt.Errorf("can only work with tar files")
+			}
+
+			fn := hdr.Name
+			if l, exists := idx[fn]; exists {
+				cb(name, l, fn)
+			} else {
+				idx[fn] = name
+			}
+
+			return nil
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
