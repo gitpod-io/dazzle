@@ -1,24 +1,22 @@
 package dazzle
 
 import (
-	"archive/tar"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/docker/cli/cli/config/configfile"
 	docker "github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/jsonmessage"
-	"github.com/docker/docker/pkg/term"
 	"github.com/mholt/archiver"
 	"github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/buildpack/imgutil/remote"
+	"github.com/google/go-containerregistry/pkg/authn"
 )
 
 // NewEnvironment creates a new default environment
@@ -139,204 +137,193 @@ func MergeImages(env *Environment, dest, base string, addons ...string) error {
 		addonImages = append(addonImages, *img)
 	}
 
-	// build the new ~world~ layer order
-	fmt.Fprintln(env.Out, "🌍\tbuilding new world order")
-	var (
-		layers    []string
-		diffIDs   []string
-		histories []map[string]interface{}
-	)
-	layers = append(layers, baseImage.Layers...)
-	diffIDs = append(diffIDs, baseImage.LoadedConfig.RootFS.DiffIDs...)
-	histories = append(histories, baseImage.LoadedConfig.History...)
-	for _, addonImg := range addonImages {
-		for i, l := range addonImg.Layers {
-			if i < len(baseImage.Layers) {
-				continue
+	// create dest image
+	dst, err := remote.NewImage(dest, authn.DefaultKeychain, remote.FromBaseImage(base))
+	if err != nil {
+		return err
+	}
+
+	for i, ai := range addonImages {
+		for _, l := range ai.Layers[len(baseImage.Layers):] {
+			fmt.Printf("  adding %s from %s\n", l, addons[i])
+			err = dst.AddLayer(filepath.Join(repoFn, l))
+			if err != nil {
+				return err
 			}
-
-			layers = append(layers, l)
-			diffIDs = append(diffIDs, addonImg.LoadedConfig.RootFS.DiffIDs[i])
-			histories = append(histories, addonImg.LoadedConfig.History[i])
-		}
-	}
-	// check for overlap between the images
-	err = checkForOverlap(repoFn, layers, func(thisLayer, otherLayer, fn string) {
-		log.WithField("this-layer", thisLayer).WithField("other-layer", otherLayer).WithField("file", fn).Warn("overlapping layers")
-	})
-	if err != nil {
-		return err
-	}
-
-	// create new image config from base layer config
-	fmt.Fprintln(env.Out, "🔥\tremaking to the world to my liking")
-	fc, err := ioutil.ReadFile(filepath.Join(repoFn, baseImage.Config))
-	if err != nil {
-		return err
-	}
-	var baselayerConfig map[string]interface{}
-	err = json.Unmarshal(fc, &baselayerConfig)
-	if err != nil {
-		return err
-	}
-	baselayerConfig["rootfs"].(map[string]interface{})["diff_ids"] = diffIDs
-	baselayerConfig["history"] = histories
-	fc, err = json.Marshal(baselayerConfig)
-	if err != nil {
-		return err
-	}
-	baselayerConfigHash := fmt.Sprintf("%x", sha256.Sum256(fc))
-	newConfigFn := baselayerConfigHash + ".json"
-	err = ioutil.WriteFile(filepath.Join(repoFn, newConfigFn), fc, 0611)
-	if err != nil {
-		return err
-	}
-
-	// create new manifest
-	fmt.Fprintln(env.Out, "🙈\trewriting history")
-	var newManifest tarExportManifest
-	newManifest = append(newManifest, tarExportManifestEntry{
-		Config:   newConfigFn,
-		RepoTags: []string{dest},
-		Layers:   layers,
-	})
-	fc, err = json.Marshal(newManifest)
-	if err != nil {
-		return err
-	}
-	err = os.Rename(manifestFn, filepath.Join(repoFn, "manifest_original.json"))
-	if err != nil {
-		return err
-	}
-	err = ioutil.WriteFile(manifestFn, fc, 0611)
-	if err != nil {
-		return err
-	}
-
-	// update the layer json files
-	for i, l := range layers[1:] {
-		cfgFn := filepath.Join(repoFn, filepath.Dir(l), "json")
-		fc, err := ioutil.ReadFile(cfgFn)
-		if err != nil {
-			return err
-		}
-
-		var cfg map[string]interface{}
-		err = json.Unmarshal(fc, &cfg)
-		if err != nil {
-			return err
-		}
-
-		cfg["parent"] = layerName(layers[i])
-
-		fc, err = json.Marshal(cfg)
-		if err != nil {
-			return err
-		}
-		err = os.Rename(cfgFn, cfgFn+"_original")
-		if err != nil {
-			return err
-		}
-		err = ioutil.WriteFile(cfgFn, fc, 0611)
-		if err != nil {
-			return err
 		}
 	}
 
-	// replace the repositories file
-	dstsegs := strings.Split(dest, ":")
-	dstrepo := dstsegs[0]
-	dsttag := "latest"
-	if len(dstsegs) > 1 {
-		dsttag = dstsegs[1]
-	}
-	repositories := map[string]map[string]string{
-		dstrepo: map[string]string{
-			dsttag: layerName(layers[len(layers)-1]),
-		},
-	}
-	fc, err = json.Marshal(repositories)
-	if err != nil {
-		return err
-	}
-	err = os.Rename(filepath.Join(repoFn, "repositories"), filepath.Join(repoFn, "repositories_original"))
-	if err != nil {
-		return err
-	}
-	err = ioutil.WriteFile(filepath.Join(repoFn, "repositories"), fc, 0611)
+	err = dst.Save()
 	if err != nil {
 		return err
 	}
 
-	// pack it up
-	fmt.Fprintln(env.Out, "⚰️\tpacking it all up")
-	var pkgcnt []string
-	pkgcnt = append(pkgcnt,
-		filepath.Join(repoFn, "manifest.json"),
-		filepath.Join(repoFn, "repositories"),
-		filepath.Join(repoFn, newManifest[0].Config),
-	)
-	for _, l := range layers {
-		base := filepath.Join(repoFn, filepath.Dir(l))
-		pkgcnt = append(pkgcnt, base)
-	}
-	pkgfn := filepath.Join(wd, "pkg.tar")
+	// // build the new ~world~ layer order
+	// fmt.Fprintln(env.Out, "🌍\tbuilding new world order")
+	// var (
+	// 	layers    []string
+	// 	diffIDs   []string
+	// 	histories []map[string]interface{}
+	// )
+	// layers = append(layers, baseImage.Layers...)
+	// diffIDs = append(diffIDs, baseImage.LoadedConfig.RootFS.DiffIDs...)
+	// histories = append(histories, baseImage.LoadedConfig.History...)
+	// for _, addonImg := range addonImages {
+	// 	for i, l := range addonImg.Layers {
+	// 		if i < len(baseImage.Layers) {
+	// 			continue
+	// 		}
 
-	err = archiver.Archive(pkgcnt, pkgfn)
-	if err != nil {
-		return err
-	}
+	// 		layers = append(layers, l)
+	// 		diffIDs = append(diffIDs, addonImg.LoadedConfig.RootFS.DiffIDs[i])
+	// 		histories = append(histories, addonImg.LoadedConfig.History[i])
+	// 	}
+	// }
+	// // check for overlap between the images
+	// err = checkForOverlap(repoFn, layers, func(thisLayer, otherLayer, fn string) {
+	// 	log.WithField("this-layer", thisLayer).WithField("other-layer", otherLayer).WithField("file", fn).Warn("overlapping layers")
+	// })
+	// if err != nil {
+	// 	return err
+	// }
 
-	// load it back into the daemon
-	fmt.Fprintln(env.Out, "👹\toffering world to daemons")
-	pkg, err := os.OpenFile(pkgfn, os.O_RDONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer pkg.Close()
-	resp, err := env.Client.ImageLoad(env.Context, pkg, false)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+	// // create new image config from base layer config
+	// fmt.Fprintln(env.Out, "🔥\tremaking to the world to my liking")
+	// fc, err := ioutil.ReadFile(filepath.Join(repoFn, baseImage.Config))
+	// if err != nil {
+	// 	return err
+	// }
+	// var baselayerConfig map[string]interface{}
+	// err = json.Unmarshal(fc, &baselayerConfig)
+	// if err != nil {
+	// 	return err
+	// }
+	// baselayerConfig["rootfs"].(map[string]interface{})["diff_ids"] = diffIDs
+	// baselayerConfig["history"] = histories
+	// fc, err = json.Marshal(baselayerConfig)
+	// if err != nil {
+	// 	return err
+	// }
+	// baselayerConfigHash := fmt.Sprintf("%x", sha256.Sum256(fc))
+	// newConfigFn := baselayerConfigHash + ".json"
+	// err = ioutil.WriteFile(filepath.Join(repoFn, newConfigFn), fc, 0611)
+	// if err != nil {
+	// 	return err
+	// }
 
-	termFd, isTerm := term.GetFdInfo(env.Out)
-	err = jsonmessage.DisplayJSONMessagesStream(resp.Body, env.Out, termFd, isTerm, nil)
-	if err != nil {
-		return err
-	}
+	// // create new manifest
+	// fmt.Fprintln(env.Out, "🙈\trewriting history")
+	// var newManifest tarExportManifest
+	// newManifest = append(newManifest, tarExportManifestEntry{
+	// 	Config:   newConfigFn,
+	// 	RepoTags: []string{dest},
+	// 	Layers:   layers,
+	// })
+	// fc, err = json.Marshal(newManifest)
+	// if err != nil {
+	// 	return err
+	// }
+	// err = os.Rename(manifestFn, filepath.Join(repoFn, "manifest_original.json"))
+	// if err != nil {
+	// 	return err
+	// }
+	// err = ioutil.WriteFile(manifestFn, fc, 0611)
+	// if err != nil {
+	// 	return err
+	// }
 
-	return nil
-}
+	// // update the layer json files
+	// for i, l := range layers[1:] {
+	// 	cfgFn := filepath.Join(repoFn, filepath.Dir(l), "json")
+	// 	fc, err := ioutil.ReadFile(cfgFn)
+	// 	if err != nil {
+	// 		return err
+	// 	}
 
-func checkForOverlap(wd string, layers []string, cb func(thisLayer, otherLayer, fn string)) error {
-	idx := make(map[string]string)
+	// 	var cfg map[string]interface{}
+	// 	err = json.Unmarshal(fc, &cfg)
+	// 	if err != nil {
+	// 		return err
+	// 	}
 
-	for _, layer := range layers {
-		name := layer
-		err := archiver.Walk(filepath.Join(wd, layer), func(f archiver.File) error {
-			if f.IsDir() {
-				return nil
-			}
+	// 	cfg["parent"] = layerName(layers[i])
 
-			hdr, ok := f.Header.(*tar.Header)
-			if !ok {
-				return fmt.Errorf("can only work with tar files")
-			}
+	// 	fc, err = json.Marshal(cfg)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	err = os.Rename(cfgFn, cfgFn+"_original")
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	err = ioutil.WriteFile(cfgFn, fc, 0611)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// }
 
-			fn := hdr.Name
-			if l, exists := idx[fn]; exists {
-				cb(name, l, fn)
-			} else {
-				idx[fn] = name
-			}
+	// // replace the repositories file
+	// dstsegs := strings.Split(dest, ":")
+	// dstrepo := dstsegs[0]
+	// dsttag := "latest"
+	// if len(dstsegs) > 1 {
+	// 	dsttag = dstsegs[1]
+	// }
+	// repositories := map[string]map[string]string{
+	// 	dstrepo: map[string]string{
+	// 		dsttag: layerName(layers[len(layers)-1]),
+	// 	},
+	// }
+	// fc, err = json.Marshal(repositories)
+	// if err != nil {
+	// 	return err
+	// }
+	// err = os.Rename(filepath.Join(repoFn, "repositories"), filepath.Join(repoFn, "repositories_original"))
+	// if err != nil {
+	// 	return err
+	// }
+	// err = ioutil.WriteFile(filepath.Join(repoFn, "repositories"), fc, 0611)
+	// if err != nil {
+	// 	return err
+	// }
 
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-	}
+	// // pack it up
+	// fmt.Fprintln(env.Out, "⚰️\tpacking it all up")
+	// var pkgcnt []string
+	// pkgcnt = append(pkgcnt,
+	// 	filepath.Join(repoFn, "manifest.json"),
+	// 	filepath.Join(repoFn, "repositories"),
+	// 	filepath.Join(repoFn, newManifest[0].Config),
+	// )
+	// for _, l := range layers {
+	// 	base := filepath.Join(repoFn, filepath.Dir(l))
+	// 	pkgcnt = append(pkgcnt, base)
+	// }
+	// pkgfn := filepath.Join(wd, "pkg.tar")
+
+	// err = archiver.Archive(pkgcnt, pkgfn)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// // load it back into the daemon
+	// fmt.Fprintln(env.Out, "👹\toffering world to daemons")
+	// pkg, err := os.OpenFile(pkgfn, os.O_RDONLY, 0644)
+	// if err != nil {
+	// 	return err
+	// }
+	// defer pkg.Close()
+	// resp, err := env.Client.ImageLoad(env.Context, pkg, false)
+	// if err != nil {
+	// 	return err
+	// }
+	// defer resp.Body.Close()
+
+	// termFd, isTerm := term.GetFdInfo(env.Out)
+	// err = jsonmessage.DisplayJSONMessagesStream(resp.Body, env.Out, termFd, isTerm, nil)
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 }
@@ -406,8 +393,4 @@ func (m tarExportManifest) GetByRepoTag(tag string) *tarExportManifestEntry {
 		}
 	}
 	return nil
-}
-
-func layerName(path string) string {
-	return filepath.Base(filepath.Dir(path))
 }
