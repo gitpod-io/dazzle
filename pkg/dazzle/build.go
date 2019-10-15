@@ -131,7 +131,6 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 		}
 		buildName := fmt.Sprintf("%s:build-%s", cfg.BuildImageRepo, dfhash)
 		err = pullOrBuildImage(cfg, buildctxFn, buildName, types.ImageBuildOptions{
-			PullParent: false,
 			Dockerfile: bd,
 		})
 		if err != nil {
@@ -150,11 +149,26 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 	}
 
 	// build image with prologue
-	finalCfg := cfg
-	finalCfg.UseRegistry = false
-	err = pullOrBuildImage(finalCfg, buildctxFn, dst, types.ImageBuildOptions{
-		PullParent: false,
-		Dockerfile: prologueDFN,
+	allCliAuth, err := cfg.Env.DockerCfg.GetAllCredentials()
+	if err != nil {
+		return err
+	}
+	allAuth := make(map[string]types.AuthConfig)
+	for k, v := range allCliAuth {
+		allAuth[k] = types.AuthConfig{
+			Username:      v.Username,
+			Password:      v.Password,
+			Auth:          v.Auth,
+			Email:         v.Email,
+			ServerAddress: v.ServerAddress,
+			IdentityToken: v.IdentityToken,
+			RegistryToken: v.RegistryToken,
+		}
+	}
+	err = pullOrBuildImage(cfg, buildctxFn, dst, types.ImageBuildOptions{
+		PullParent:  true,
+		AuthConfigs: allAuth,
+		Dockerfile:  prologueDFN,
 	})
 	if err != nil {
 		return err
