@@ -43,7 +43,7 @@ func (f *Formatter) Format(entry *logrus.Entry) ([]byte, error) {
 	case logrus.InfoLevel:
 		cl = color.Info
 	case logrus.WarnLevel:
-		cl = color.Warn
+		cl = &color.Theme{Name: "warning", Style: color.Style{color.Yellow}}
 	case logrus.ErrorLevel:
 		cl = color.Error
 	case logrus.FatalLevel:
@@ -56,7 +56,7 @@ func (f *Formatter) Format(entry *logrus.Entry) ([]byte, error) {
 			continue
 		}
 
-		res = append(res, []byte(color.FgDarkGray.Sprintf("%s=%s ", k, v))...)
+		res = append(res, []byte(color.FgDarkGray.Sprintf("%s=\"%s\" ", k, v))...)
 	}
 
 	res = append(res, '\n')

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/32leaves/dazzle/pkg/test"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/term"
@@ -19,6 +20,7 @@ import (
 	"github.com/moby/buildkit/frontend/dockerfile/command"
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
 )
 
 // BuildConfig configures a dazzle build
@@ -34,7 +36,8 @@ type BuildConfig struct {
 }
 
 const (
-	layerLabel = "dazzle/layer"
+	labelLayer = "dazzle/layer"
+	labelTest  = "dazzle/test"
 )
 
 // Build builds a Dockerfile with independent layers
@@ -75,7 +78,12 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 
 	// split of addon Dockerfiles
 	addons := sps[1:]
-	var builds []string
+	type buildSpec struct {
+		Dockerfile string
+		Layer      string
+		Test       string
+	}
+	var builds []buildSpec
 	for _, sp := range addons {
 		fn := fmt.Sprintf("dazzle__%s.Dockerfile", sp.Name)
 		err = parsedDF.ExtractFrom(filepath.Join(loc, fn), sp, baseImgName)
@@ -83,7 +91,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 		if err != nil {
 			return err
 		}
-		builds = append(builds, fn)
+		builds = append(builds, buildSpec{fn, sp.Name, sp.Test})
 	}
 
 	// create the prologue Dockerfile
@@ -129,23 +137,37 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 
 	// build addons
 	var buildNames []string
-	for i, bd := range builds {
-		log.WithField("name", addons[i].Name).WithField("emoji", "👷").WithField("step", step).Info("building addon image")
+	var testSuites []string
+	for _, bd := range builds {
+		log.WithField("name", bd.Layer).WithField("emoji", "👷").WithField("step", step).Info("building addon image")
 		step++
 
-		dfhash, err := fileChecksum(filepath.Join(loc, bd))
+		dfhash, err := fileChecksum(filepath.Join(loc, bd.Dockerfile))
 		if err != nil {
 			return err
 		}
 		buildName := fmt.Sprintf("%s:build-%s", cfg.BuildImageRepo, dfhash)
 		err = pullOrBuildImage(cfg, buildctxFn, buildName, types.ImageBuildOptions{
-			Dockerfile: bd,
+			Dockerfile: bd.Dockerfile,
 		})
 		if err != nil {
 			return err
 		}
-
 		buildNames = append(buildNames, buildName)
+
+		if bd.Test == "" {
+			continue
+		}
+
+		testfn := filepath.Join(loc, bd.Test)
+		cfg.Env.Formatter.Push()
+		_, err = testImage(cfg, bd.Layer, buildName, testfn)
+		cfg.Env.Formatter.Pop()
+		if err != nil {
+			return err
+		}
+
+		testSuites = append(testSuites, testfn)
 	}
 
 	// merge the whole thing
@@ -191,7 +213,41 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 		return err
 	}
 
+	// if there are tests, run them against the final image
+	for _, testfn := range testSuites {
+		cfg.Env.Formatter.Push()
+		_, err = testImage(cfg, testfn, dst, testfn)
+		cfg.Env.Formatter.Pop()
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func testImage(cfg BuildConfig, layerName, image, testfn string) (res *test.Results, err error) {
+	fc, err := ioutil.ReadFile(testfn)
+	if err != nil {
+		return nil, err
+	}
+
+	var tests []*test.Spec
+	err = yaml.Unmarshal(fc, &tests)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, t := range tests {
+		t.ImageRef = image
+	}
+
+	rawres, success := test.RunTests(cfg.Env.Context, cfg.Env.Client, tests)
+	if !success {
+		return nil, fmt.Errorf("tests failed")
+	}
+
+	return &rawres, nil
 }
 
 func getDockerAuthForTag(cfg BuildConfig, tag string) (string, error) {
@@ -237,7 +293,11 @@ func pullOrBuildImage(cfg BuildConfig, buildctxFn, tag string, opts types.ImageB
 		}
 
 		// TODO: if the image isn't found here that merely means it isn't built yet - that's not worth a warning
-		log.WithError(err).Warn("cannot pull image")
+		if strings.Contains(err.Error(), "not found") {
+			log.WithError(err).Debug("image not built yet")
+		} else {
+			log.WithError(err).Warn("cannot pull image")
+		}
 	}
 
 	buildctx, err := os.OpenFile(buildctxFn, os.O_RDONLY, 0644)
@@ -300,6 +360,7 @@ type SplitPoint struct {
 	StartLine int
 	EndLine   int
 	Name      string
+	Test      string
 }
 
 // ParsedDockerfile contains the result of a Dockerfile parse
@@ -364,7 +425,17 @@ func (df *ParsedDockerfile) SplitPoints() ([]SplitPoint, error) {
 			cur.EndLine = tkn.EndLine
 			continue
 		}
-		if next.Value != layerLabel {
+
+		if next.Value == labelTest {
+			name := next.Next.Value
+			if len(name) == 0 {
+				return nil, fmt.Errorf("invalid dazzle test name in line %d", tkn.StartLine)
+			}
+
+			cur.Test = name
+		}
+
+		if next.Value != labelLayer {
 			cur.EndLine = tkn.EndLine
 			continue
 		}
