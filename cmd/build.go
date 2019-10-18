@@ -22,10 +22,11 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/32leaves/dazzle/pkg/dazzle"
+	"github.com/32leaves/dazzle/pkg/fancylog"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -35,6 +36,9 @@ var buildCmd = &cobra.Command{
 	Short: "Builds a Docker image with independent layers",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		formatter := &fancylog.Formatter{}
+		log.SetFormatter(formatter)
+
 		var wd string
 		if len(args) > 0 {
 			wd = args[0]
@@ -63,20 +67,15 @@ var buildCmd = &cobra.Command{
 			return err
 		}
 		repoChanged := cmd.Flags().Changed("repository")
-
-		const (
-			colorRed    = "\x1B[01;91m"
-			colorNormal = "\x1B[0m"
-		)
 		if !repoChanged {
-			fmt.Fprintln(os.Stderr, colorRed+"Using --pull without --repository will likely produce bad results!"+colorNormal)
-			fmt.Fprintln(os.Stderr)
+			log.Warn("Using dazzle without --repository will likely produce incorrect results!")
 		}
 
 		env, err := dazzle.NewEnvironment()
 		if err != nil {
 			log.Fatal(err)
 		}
+		env.Formatter = formatter
 
 		cfg := dazzle.BuildConfig{
 			Env:            env,

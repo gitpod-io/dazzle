@@ -39,6 +39,8 @@ const (
 
 // Build builds a Dockerfile with independent layers
 func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
+	var step int
+
 	fullDFN := filepath.Join(loc, dockerfile)
 
 	parsedDF, err := ParseDockerfile(fullDFN)
@@ -111,9 +113,12 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("created build context in %s\n", buildctxFn)
+	log.WithField("buildContext", buildctxFn).WithField("emoji", "🏠").WithField("step", step).Info("created build context")
+	step++
 
 	// build base image
+	log.WithField("buildContext", buildctxFn).WithField("emoji", "👷").WithField("step", step).Info("building base image")
+	step++
 	err = pullOrBuildImage(cfg, buildctxFn, baseImgName, types.ImageBuildOptions{
 		PullParent: true,
 		Dockerfile: baseDFN,
@@ -124,7 +129,10 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 
 	// build addons
 	var buildNames []string
-	for _, bd := range builds {
+	for i, bd := range builds {
+		log.WithField("name", addons[i].Name).WithField("emoji", "👷").WithField("step", step).Info("building addon image")
+		step++
+
 		dfhash, err := fileChecksum(filepath.Join(loc, bd))
 		if err != nil {
 			return err
@@ -141,6 +149,11 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 	}
 
 	// merge the whole thing
+	log.WithField("emoji", "🤘").WithField("step", step).Info("merging images")
+	step++
+
+	cfg.Env.Formatter.Push()
+
 	mergeEnv := *cfg.Env
 	mergeEnv.Workdir = filepath.Join(mergeEnv.Workdir, "merge")
 	err = MergeImages(&mergeEnv, mergedImgName, baseImgName, buildNames...)
@@ -148,7 +161,11 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 		return err
 	}
 
+	cfg.Env.Formatter.Pop()
+
 	// build image with prologue
+	log.WithField("emoji", "👷").WithField("step", step).Info("building prologue image")
+	step++
 	allCliAuth, err := cfg.Env.DockerCfg.GetAllCredentials()
 	if err != nil {
 		return err
@@ -196,7 +213,7 @@ func getDockerAuthForTag(cfg BuildConfig, tag string) (string, error) {
 }
 
 func pullOrBuildImage(cfg BuildConfig, buildctxFn, tag string, opts types.ImageBuildOptions) error {
-	log.WithField("dockerfile", opts.Dockerfile).WithField("tag", tag).Info("building image")
+	log.WithField("dockerfile", opts.Dockerfile).WithField("tag", tag).Debug("building image")
 
 	env := cfg.Env
 
@@ -211,14 +228,16 @@ func pullOrBuildImage(cfg BuildConfig, buildctxFn, tag string, opts types.ImageB
 			RegistryAuth: auth,
 		})
 		if err == nil {
-			err = jsonmessage.DisplayJSONMessagesStream(presp, env.Out, termFd, isTerm, nil)
+			err = jsonmessage.DisplayJSONMessagesStream(presp, env.Out(), termFd, isTerm, nil)
 			if err != nil {
 				return err
 			}
 
 			return nil
 		}
-		fmt.Println(err)
+
+		// TODO: if the image isn't found here that merely means it isn't built yet - that's not worth a warning
+		log.WithError(err).Warn("cannot pull image")
 	}
 
 	buildctx, err := os.OpenFile(buildctxFn, os.O_RDONLY, 0644)
@@ -231,7 +250,7 @@ func pullOrBuildImage(cfg BuildConfig, buildctxFn, tag string, opts types.ImageB
 	if err != nil {
 		return err
 	}
-	err = jsonmessage.DisplayJSONMessagesStream(bresp.Body, env.Out, termFd, isTerm, nil)
+	err = jsonmessage.DisplayJSONMessagesStream(bresp.Body, env.Out(), termFd, isTerm, nil)
 	if err != nil {
 		return err
 	}
@@ -251,7 +270,7 @@ func pullOrBuildImage(cfg BuildConfig, buildctxFn, tag string, opts types.ImageB
 			return err
 		}
 
-		err = jsonmessage.DisplayJSONMessagesStream(presp, env.Out, termFd, isTerm, nil)
+		err = jsonmessage.DisplayJSONMessagesStream(presp, env.Out(), termFd, isTerm, nil)
 		if err != nil {
 			return err
 		}
