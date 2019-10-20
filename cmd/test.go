@@ -37,9 +37,9 @@ import (
 
 // mergeCmd represents the merge command
 var testCmd = &cobra.Command{
-	Use:   "test <suite.yaml>",
+	Use:   "test <suite.yaml> <image>",
 	Short: "Runs a dazzle test suite",
-	Args:  cobra.MinimumNArgs(1),
+	Args:  cobra.MinimumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		log.SetFormatter(&fancylog.Formatter{})
 		env, err := dazzle.NewEnvironment()
@@ -58,14 +58,7 @@ var testCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		img, _ := cmd.Flags().GetString("image")
-		if img != "" {
-			for _, s := range tests {
-				s.ImageRef = img
-			}
-		}
-
-		results, success := test.RunTests(context.Background(), env.Client, tests)
+		results, success := test.RunTests(context.Background(), env.Client, args[1], tests)
 
 		xmlout, _ := cmd.Flags().GetString("output-xml")
 		if xmlout != "" {
@@ -91,6 +84,5 @@ var testCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(testCmd)
 
-	testCmd.Flags().StringP("image", "i", "", "run test against this image (overwriting the images specified in the test suite)")
-	testCmd.Flags().String("output-xml", "", "save result as XML file")
+	testCmd.Flags().String("output-xml", "", "save result as JUnit XML file")
 }

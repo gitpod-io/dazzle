@@ -30,6 +30,10 @@ func NewEnvironment() (*Environment, error) {
 		return nil, err
 	}
 	client.NegotiateAPIVersion(ctx)
+	_, err = client.ServerVersion(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	home, err := homedir.Dir()
 	if err != nil {

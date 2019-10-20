@@ -18,4 +18,4 @@ dist/
 example/dazzle__*.Dockerfile
 
 # dive log
-dive.log
+dive.logdazzle

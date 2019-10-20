@@ -1,14 +1,16 @@
-- desc: "it should run Go"
-  command: ["go"]
+- desc: "it should demonstrate tests"
+  command: ["echo", "hello world"]
   assert:
-  - "status == 2"
-  - stderr.indexOf("Go is a tool") != -1
-- desc: "it should have Go in version 1.13"
-  command: ["go", "version"]
-  assert:
-  - stdout.indexOf("go1.13") != -1
-- desc: "it should skip"
-  skip: true
-  command: ["exit", "1"]
+  - status == 0
+  - stdout.indexOf("hello") != -1
+  - stderr.length == 0
+- desc: "it should handle exit codes"
+  command: ["sh", "-c", "exit 1"]
   assert:
   - status == 1
+- desc: "it should have environment variables"
+  command: ["sh", "-c", "echo $MESSAGE"]
+  env:
+  - MESSAGE=foobar
+  assert:
+  - stdout.trim() == "foobar"
