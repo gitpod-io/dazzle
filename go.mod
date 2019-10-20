@@ -16,6 +16,7 @@ require (
 	github.com/google/go-containerregistry v0.0.0-20190503220729-1c6c7f61e8a5
 	github.com/gookit/color v1.2.0
 	github.com/gorilla/mux v1.7.3 // indirect
+	github.com/manifoldco/promptui v0.3.2
 	github.com/mholt/archiver v3.1.1+incompatible
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/moby/buildkit v0.6.1
