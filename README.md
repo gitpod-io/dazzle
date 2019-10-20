@@ -1,4 +1,4 @@
-![Dazzle](logo.png)
+![Dazzle](logo.png | width=100)
 
 dazzle is a rather experimental Docker image builder. Its goal is to build independent layers where a change to one layer does *not* invalidate the ones sitting "above" it. To this end, dazzle uses black magic.
 
@@ -9,7 +9,7 @@ dazzle has three main capabilities.
 3. _run tests against images_: to ensure that an image is capable of what we think it should be - epecially after merging - dazzle supports simple tests and assertions that run against Docker images.
 
 ## Would I want to use this?
-Not ordinarily, no. E.g. if you're packing your service/app/software/unicorn you're probably better of with a regular Docker image build and well established means for optimizing that one (think multi-stage builds, proper layer ordering).
+Not ordinarily, no. For example, if you're packing your service/app/software/unicorn you're probably better of with a regular Docker image build and well established means for optimizing that one (think multi-stage builds, proper layer ordering).
 
 If however you are building images which consist of a lot of independent "concerns", i.e. chunks that can be strictly seperated, then this might for you.
 For example, if you're building an image that serves as a collection of tools, the layer hierarchy imposed by regular builds doesn't fit so well.
@@ -59,10 +59,14 @@ LABEL dazzle/layer=node
 RUN apk add --no-cache nodejs
 ```
 
-Notice the `dazzle/layer` `LABEL` entries. A change to the `RUN apk add --no-cache git make musl-dev go` line would **not** re-create the layer created by `RUN apk add --no-cache nodejs` because both are separated by different `dazzle/layer` labels.
+Notice the `LABEL dazzle/layer` entries. A change to the `RUN apk add --no-cache git make musl-dev go` line would **not** re-create the layer created by `RUN apk add --no-cache nodejs` because both are separated by different `dazzle/layer` labels.
 
 This Dockerfile would result in four seperate builds:
 1. The "base image" contains everything before the first `dazzle/layer` entry
+   ```Dockerfile
+   FROM alpine:3.9
+   RUN touch /base-image
+   ```
 2. The "golang" layer which contains
    ```Dockerfile
    FROM base-image
