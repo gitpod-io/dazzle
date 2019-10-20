@@ -1,5 +1,7 @@
 package test
 
+//go:generate sh -c "go run generate-schema.go > ../../testspec.schema.json"
+
 import (
 	"bytes"
 	"context"
@@ -22,7 +24,6 @@ type Spec struct {
 	Desc string `yaml:"desc"`
 
 	Skip       bool     `yaml:"skip,omitempty"`
-	ImageRef   string   `yaml:"image,omitempty"`
 	User       string   `yaml:"user,omitempty"`
 	Command    []string `yaml:"command"`
 	Entrypoint []string `yaml:"entrypoint,omitempty"`
@@ -59,7 +60,7 @@ type Results struct {
 }
 
 // RunTests executes a series of tests
-func RunTests(ctx context.Context, docker *client.Client, tests []*Spec) (res Results, success bool) {
+func RunTests(ctx context.Context, docker *client.Client, imageRef string, tests []*Spec) (res Results, success bool) {
 	success = true
 
 	var results []*Result
@@ -71,7 +72,7 @@ func RunTests(ctx context.Context, docker *client.Client, tests []*Spec) (res Re
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		r := tst.Run(ctx, docker)
+		r := tst.Run(ctx, docker, imageRef)
 		results = append(results, r)
 		cancel()
 
@@ -98,17 +99,17 @@ func RunTests(ctx context.Context, docker *client.Client, tests []*Spec) (res Re
 }
 
 // Run executes the test
-func (s *Spec) Run(ctx context.Context, docker *client.Client) (res *Result) {
+func (s *Spec) Run(ctx context.Context, docker *client.Client, imageRef string) (res *Result) {
 	res = &Result{
 		Desc:     s.Desc,
-		ImageRef: s.ImageRef,
+		ImageRef: imageRef,
 		Skipped:  s.Skip,
 	}
 	if s.Skip {
 		return
 	}
 
-	runres, err := s.runContainer(ctx, docker)
+	runres, err := s.runContainer(ctx, docker, imageRef)
 	if err != nil {
 		res.Error = &ErrResult{
 			Message: err.Error(),
@@ -171,10 +172,10 @@ type RunResult struct {
 	StatusCode int64  `yaml:"statusCode" xml:"-"`
 }
 
-func (s *Spec) runContainer(ctx context.Context, docker *client.Client) (*RunResult, error) {
-	containerName := fmt.Sprintf("dazzle-test-%x", sha256.Sum256([]byte(fmt.Sprintf("%s-%s-%d", s.ImageRef, s.Desc, time.Now().UnixNano()))))
+func (s *Spec) runContainer(ctx context.Context, docker *client.Client, imageRef string) (*RunResult, error) {
+	containerName := fmt.Sprintf("dazzle-test-%x", sha256.Sum256([]byte(fmt.Sprintf("%s-%s-%d", imageRef, s.Desc, time.Now().UnixNano()))))
 	ctnt, err := docker.ContainerCreate(ctx, &container.Config{
-		Image:        s.ImageRef,
+		Image:        imageRef,
 		User:         s.User,
 		Env:          s.Env,
 		Cmd:          s.Command,

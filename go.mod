@@ -4,6 +4,7 @@ go 1.12
 
 require (
 	github.com/Microsoft/go-winio v0.4.14 // indirect
+	github.com/alecthomas/jsonschema v0.0.0-20191017121752-4bb6e3fae4f2
 	github.com/alecthomas/repr v0.0.0-20181024024818-d37bc2a10ba1
 	github.com/buildpack/imgutil v0.0.0-20191010153712-78959154ded1
 	github.com/docker/cli v0.0.0-20190321234815-f40f9c240ab0

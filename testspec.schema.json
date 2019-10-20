@@ -1,0 +1,53 @@
+{
+  "items": {
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "$ref": "#/definitions/Spec"
+  },
+  "type": "array",
+  "definitions": {
+    "Spec": {
+      "required": [
+        "desc",
+        "command",
+        "assert"
+      ],
+      "properties": {
+        "assert": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "desc": {
+          "type": "string"
+        },
+        "entrypoint": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "env": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "skip": {
+          "type": "boolean"
+        },
+        "user": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    }
+  }
+}

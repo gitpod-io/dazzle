@@ -238,11 +238,7 @@ func testImage(cfg BuildConfig, layerName, image, testfn string) (res *test.Resu
 		return nil, err
 	}
 
-	for _, t := range tests {
-		t.ImageRef = image
-	}
-
-	rawres, success := test.RunTests(cfg.Env.Context, cfg.Env.Client, tests)
+	rawres, success := test.RunTests(cfg.Env.Context, cfg.Env.Client, image, tests)
 	if !success {
 		return nil, fmt.Errorf("tests failed")
 	}
