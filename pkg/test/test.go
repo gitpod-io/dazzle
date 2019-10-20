@@ -25,8 +25,8 @@ type Spec struct {
 
 	Skip       bool     `yaml:"skip,omitempty"`
 	User       string   `yaml:"user,omitempty"`
-	Command    []string `yaml:"command"`
-	Entrypoint []string `yaml:"entrypoint,omitempty"`
+	Command    []string `yaml:"command,flow"`
+	Entrypoint []string `yaml:"entrypoint,omitempty,flow"`
 	Env        []string `yaml:"env,omitempty"`
 
 	Assertions []string `yaml:"assert"`
@@ -109,7 +109,7 @@ func (s *Spec) Run(ctx context.Context, docker *client.Client, imageRef string) 
 		return
 	}
 
-	runres, err := s.runContainer(ctx, docker, imageRef)
+	runres, err := s.RunContainer(ctx, docker, imageRef)
 	if err != nil {
 		res.Error = &ErrResult{
 			Message: err.Error(),
@@ -119,7 +119,7 @@ func (s *Spec) Run(ctx context.Context, docker *client.Client, imageRef string) 
 	}
 
 	res.RunResult = runres
-	err = s.validateAssertions(res, runres)
+	err = ValidateAssertions(res, s.Assertions, runres)
 	if err != nil {
 		res.Error = &ErrResult{
 			Message: err.Error(),
@@ -131,13 +131,14 @@ func (s *Spec) Run(ctx context.Context, docker *client.Client, imageRef string) 
 	return
 }
 
-func (s *Spec) validateAssertions(res *Result, runres *RunResult) error {
+// ValidateAssertions runs the assertions of a test spec against a run result and sets the result appropriately
+func ValidateAssertions(res *Result, assertions []string, runres *RunResult) error {
 	vm := otto.New()
 	vm.Set("stdout", string(runres.Stdout))
 	vm.Set("stderr", string(runres.Stderr))
 	vm.Set("status", runres.StatusCode)
 
-	for _, assertion := range s.Assertions {
+	for _, assertion := range assertions {
 		log.Debugf("- %s", assertion)
 
 		val, err := vm.Run(assertion)
@@ -172,7 +173,8 @@ type RunResult struct {
 	StatusCode int64  `yaml:"statusCode" xml:"-"`
 }
 
-func (s *Spec) runContainer(ctx context.Context, docker *client.Client, imageRef string) (*RunResult, error) {
+// RunContainer executes the test spec in a Docker container
+func (s *Spec) RunContainer(ctx context.Context, docker *client.Client, imageRef string) (*RunResult, error) {
 	containerName := fmt.Sprintf("dazzle-test-%x", sha256.Sum256([]byte(fmt.Sprintf("%s-%s-%d", imageRef, s.Desc, time.Now().UnixNano()))))
 	ctnt, err := docker.ContainerCreate(ctx, &container.Config{
 		Image:        imageRef,

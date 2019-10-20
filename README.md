@@ -1,4 +1,4 @@
-![Dazzle](logo.png | width=100)
+<img src="logo.png" width="100">
 
 dazzle is a rather experimental Docker image builder. Its goal is to build independent layers where a change to one layer does *not* invalidate the ones sitting "above" it. To this end, dazzle uses black magic.
 
@@ -94,20 +94,27 @@ This makes finding and debugging issues created by the layer merge process tract
 
 ## test
 ```
-Runs a dazzle test suite
+$ dazzle test --help
+works with image tests
 
 Usage:
-  dazzle test <suite.yaml> [flags]
+  dazzle test [command]
+
+Available Commands:
+  add         Adds to a dazzle test suite
+  run         Runs a dazzle test suite
 
 Flags:
-  -h, --help                help for test
-  -i, --image string        run test against this image (overwriting the images specified in the test suite)
-      --output-xml string   save result as XML file
+  -h, --help   help for test
+
+Use "dazzle test [command] --help" for more information about a command.
 ```
 
 Dazzle can test images.
 Each test consists of a command that is executed and a number of assertions against the result of that execution.
 Tests are written in YAML whoose schema is available in `testspec.schema.json`.
+
+Note: `dazzle test add` makes adding new test cases a breeze.
 
 For example:
 ```YAML

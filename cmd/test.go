@@ -21,68 +21,15 @@
 package cmd
 
 import (
-	"context"
-	"encoding/xml"
-	"io/ioutil"
-	"os"
-
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v2"
-
-	"github.com/32leaves/dazzle/pkg/dazzle"
-	"github.com/32leaves/dazzle/pkg/fancylog"
-	"github.com/32leaves/dazzle/pkg/test"
 )
 
-// mergeCmd represents the merge command
 var testCmd = &cobra.Command{
-	Use:   "test <suite.yaml> <image>",
-	Short: "Runs a dazzle test suite",
-	Args:  cobra.MinimumNArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
-		log.SetFormatter(&fancylog.Formatter{})
-		env, err := dazzle.NewEnvironment()
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		fc, err := ioutil.ReadFile(args[0])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		var tests []*test.Spec
-		err = yaml.Unmarshal(fc, &tests)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		results, success := test.RunTests(context.Background(), env.Client, args[1], tests)
-
-		xmlout, _ := cmd.Flags().GetString("output-xml")
-		if xmlout != "" {
-			fc, err := xml.MarshalIndent(results, "  ", "    ")
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			err = ioutil.WriteFile(xmlout, fc, 0644)
-			if err != nil {
-				log.Fatal(err)
-			}
-		}
-
-		if !success {
-			os.Exit(1)
-		}
-
-		os.Exit(0)
-	},
+	Use:   "test <command>",
+	Short: "works with image tests",
+	Args:  cobra.MinimumNArgs(1),
 }
 
 func init() {
 	rootCmd.AddCommand(testCmd)
-
-	testCmd.Flags().String("output-xml", "", "save result as JUnit XML file")
 }
