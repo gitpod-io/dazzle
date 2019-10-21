@@ -79,7 +79,6 @@ var buildCmd = &cobra.Command{
 
 		cfg := dazzle.BuildConfig{
 			Env:            env,
-			UseRegistry:    true,
 			BuildImageRepo: repo,
 		}
 

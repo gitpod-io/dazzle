@@ -36,7 +36,7 @@ import (
 )
 
 var testRunCmd = &cobra.Command{
-	Use:   "run <suite.yaml> <image>",
+	Use:   "run <image> <test00.yaml> ... <testN.yaml>",
 	Short: "Runs a dazzle test suite",
 	Args:  cobra.MinimumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -46,18 +46,25 @@ var testRunCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		fc, err := ioutil.ReadFile(args[0])
-		if err != nil {
-			log.Fatal(err)
-		}
-
+		imageRef, testFiles := args[0], args[1:]
 		var tests []*test.Spec
-		err = yaml.Unmarshal(fc, &tests)
-		if err != nil {
-			log.Fatal(err)
+
+		for _, fn := range testFiles {
+			fc, err := ioutil.ReadFile(args[0])
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			var t []*test.Spec
+			err = yaml.Unmarshal(fc, &t)
+			if err != nil {
+				log.WithField("file", fn).Fatal(err)
+			}
+
+			tests = append(tests, t...)
 		}
 
-		results, success := test.RunTests(context.Background(), env.Client, args[1], tests)
+		results, success := test.RunTests(context.Background(), env.Client, imageRef, tests)
 
 		xmlout, _ := cmd.Flags().GetString("output-xml")
 		if xmlout != "" {

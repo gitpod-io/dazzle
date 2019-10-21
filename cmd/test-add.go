@@ -41,13 +41,14 @@ import (
 )
 
 var testAddCmd = &cobra.Command{
-	Use:   "add <suite.yaml> <image>",
+	Use:   "add <image> <suite.yaml>",
 	Short: "Adds to a dazzle test suite",
 	Args:  cobra.MinimumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		log.SetFormatter(&fancylog.Formatter{})
 
-		fc, err := ioutil.ReadFile(args[0])
+		imageRef, fn := args[0], args[1]
+		fc, err := ioutil.ReadFile(fn)
 		if err != nil && !os.IsNotExist(err) {
 			log.Fatal(err)
 		}
@@ -115,7 +116,7 @@ var testAddCmd = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
-		tr, err := spec.RunContainer(context.Background(), env.Client, args[1])
+		tr, err := spec.RunContainer(context.Background(), env.Client, imageRef)
 		if err != nil {
 			log.Fatal(err)
 		}

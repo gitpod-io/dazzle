@@ -27,9 +27,6 @@ import (
 type BuildConfig struct {
 	Env *Environment
 
-	// if true we'll attempt to pull the partial images prior to building them
-	UseRegistry bool
-
 	// BuildImageRepo is the name/repo of the individual build layers. When UseRegistry is true
 	// this repo should be something that can be pushed to a registry.
 	BuildImageRepo string
@@ -127,12 +124,18 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 	// build base image
 	log.WithField("buildContext", buildctxFn).WithField("emoji", "👷").WithField("step", step).Info("building base image")
 	step++
-	err = pullOrBuildImage(cfg, buildctxFn, baseImgName, types.ImageBuildOptions{
+	pulledBaseImg, err := pullOrBuildImage(cfg, buildctxFn, baseImgName, types.ImageBuildOptions{
 		PullParent: true,
 		Dockerfile: baseDFN,
 	})
 	if err != nil {
 		return err
+	}
+	if !pulledBaseImg {
+		err = pushImage(cfg, baseImgName)
+		if err != nil {
+			return err
+		}
 	}
 
 	// build addons
@@ -147,7 +150,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 			return err
 		}
 		buildName := fmt.Sprintf("%s:build-%s", cfg.BuildImageRepo, dfhash)
-		err = pullOrBuildImage(cfg, buildctxFn, buildName, types.ImageBuildOptions{
+		pulledImg, err := pullOrBuildImage(cfg, buildctxFn, buildName, types.ImageBuildOptions{
 			Dockerfile: bd.Dockerfile,
 		})
 		if err != nil {
@@ -155,19 +158,24 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 		}
 		buildNames = append(buildNames, buildName)
 
-		if bd.Test == "" {
-			continue
+		if bd.Test != "" {
+			testfn := filepath.Join(loc, bd.Test)
+			cfg.Env.Formatter.Push()
+			_, err = testImage(cfg, bd.Layer, buildName, testfn)
+			cfg.Env.Formatter.Pop()
+			if err != nil {
+				return err
+			}
+
+			testSuites = append(testSuites, testfn)
 		}
 
-		testfn := filepath.Join(loc, bd.Test)
-		cfg.Env.Formatter.Push()
-		_, err = testImage(cfg, bd.Layer, buildName, testfn)
-		cfg.Env.Formatter.Pop()
-		if err != nil {
-			return err
+		if !pulledImg {
+			err = pushImage(cfg, buildName)
+			if err != nil {
+				return err
+			}
 		}
-
-		testSuites = append(testSuites, testfn)
 	}
 
 	// merge the whole thing
@@ -204,7 +212,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 			RegistryToken: v.RegistryToken,
 		}
 	}
-	err = pullOrBuildImage(cfg, buildctxFn, dst, types.ImageBuildOptions{
+	_, err = pullOrBuildImage(cfg, buildctxFn, dst, types.ImageBuildOptions{
 		PullParent:  true,
 		AuthConfigs: allAuth,
 		Dockerfile:  prologueDFN,
@@ -221,6 +229,12 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// finally push the whole thing
+	err = pushImage(cfg, dst)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -264,74 +278,75 @@ func getDockerAuthForTag(cfg BuildConfig, tag string) (string, error) {
 	return authStr, nil
 }
 
-func pullOrBuildImage(cfg BuildConfig, buildctxFn, tag string, opts types.ImageBuildOptions) error {
+func pullOrBuildImage(cfg BuildConfig, buildctxFn, tag string, opts types.ImageBuildOptions) (pulledImage bool, err error) {
 	log.WithField("dockerfile", opts.Dockerfile).WithField("tag", tag).Debug("building image")
 
 	env := cfg.Env
-
 	termFd, isTerm := term.GetFdInfo(env.Out)
-	if cfg.UseRegistry {
-		auth, err := getDockerAuthForTag(cfg, tag)
+
+	auth, err := getDockerAuthForTag(cfg, tag)
+	if err != nil {
+		return false, err
+	}
+
+	presp, err := env.Client.ImagePull(env.Context, tag, types.ImagePullOptions{
+		RegistryAuth: auth,
+	})
+	if err == nil {
+		err = jsonmessage.DisplayJSONMessagesStream(presp, env.Out(), termFd, isTerm, nil)
 		if err != nil {
-			return err
+			return false, err
 		}
 
-		presp, err := env.Client.ImagePull(env.Context, tag, types.ImagePullOptions{
-			RegistryAuth: auth,
-		})
-		if err == nil {
-			err = jsonmessage.DisplayJSONMessagesStream(presp, env.Out(), termFd, isTerm, nil)
-			if err != nil {
-				return err
-			}
+		return true, nil
+	}
 
-			return nil
-		}
-
-		// TODO: if the image isn't found here that merely means it isn't built yet - that's not worth a warning
-		if strings.Contains(err.Error(), "not found") {
-			log.WithError(err).Debug("image not built yet")
-		} else {
-			log.WithError(err).Warn("cannot pull image")
-		}
+	// TODO: if the image isn't found here that merely means it isn't built yet - that's not worth a warning
+	if strings.Contains(err.Error(), "not found") {
+		log.WithError(err).Debug("image not built yet")
+	} else {
+		log.WithError(err).Warn("cannot pull image")
 	}
 
 	buildctx, err := os.OpenFile(buildctxFn, os.O_RDONLY, 0644)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	opts.Tags = append(opts.Tags, tag)
 	bresp, err := env.Client.ImageBuild(env.Context, buildctx, opts)
 	if err != nil {
-		return err
+		return false, err
 	}
 	err = jsonmessage.DisplayJSONMessagesStream(bresp.Body, env.Out(), termFd, isTerm, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	bresp.Body.Close()
 	buildctx.Close()
 
-	if cfg.UseRegistry {
-		auth, err := getDockerAuthForTag(cfg, tag)
-		if err != nil {
-			return err
-		}
+	return false, nil
+}
 
-		presp, err := env.Client.ImagePush(env.Context, tag, types.ImagePushOptions{
-			RegistryAuth: auth,
-		})
-		if err != nil {
-			return err
-		}
-
-		err = jsonmessage.DisplayJSONMessagesStream(presp, env.Out(), termFd, isTerm, nil)
-		if err != nil {
-			return err
-		}
+func pushImage(cfg BuildConfig, tag string) error {
+	env := cfg.Env
+	auth, err := getDockerAuthForTag(cfg, tag)
+	if err != nil {
+		return err
 	}
 
+	presp, err := env.Client.ImagePush(env.Context, tag, types.ImagePushOptions{
+		RegistryAuth: auth,
+	})
+	if err != nil {
+		return err
+	}
+
+	termFd, isTerm := term.GetFdInfo(env.Out)
+	err = jsonmessage.DisplayJSONMessagesStream(presp, env.Out(), termFd, isTerm, nil)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
