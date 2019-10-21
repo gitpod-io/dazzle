@@ -81,6 +81,8 @@ type Environment struct {
 	Client    *docker.Client
 	DockerCfg *configfile.ConfigFile
 
+	PrettyLayerNames map[string]string
+
 	Formatter *fancylog.Formatter
 	Context   context.Context
 	Workdir   string
@@ -172,7 +174,14 @@ func MergeImages(env *Environment, dest, base string, addons ...string) error {
 
 	for i, ai := range addonImages {
 		for _, l := range ai.Layers[len(baseImage.Layers):] {
-			log.WithField("layer", l).WithField("from", addons[i]).Debug("adding layer")
+			sourceName := addons[i]
+			if env.PrettyLayerNames != nil {
+				betterName, ok := env.PrettyLayerNames[sourceName]
+				if ok {
+					sourceName = betterName
+				}
+			}
+			log.WithField("layer", l).WithField("from", sourceName).Debug("adding layer")
 			err = dst.AddLayer(filepath.Join(repoFn, l))
 			if err != nil {
 				return err

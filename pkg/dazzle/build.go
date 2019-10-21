@@ -141,6 +141,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 	// build addons
 	var buildNames []string
 	var testSuites []string
+	prettyLayerNames := make(map[string]string)
 	for _, bd := range builds {
 		log.WithField("name", bd.Layer).WithField("emoji", "👷").WithField("step", step).Info("building addon image")
 		step++
@@ -157,6 +158,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 			return err
 		}
 		buildNames = append(buildNames, buildName)
+		prettyLayerNames[buildName] = bd.Layer
 
 		if bd.Test != "" {
 			testfn := filepath.Join(loc, bd.Test)
@@ -185,6 +187,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 	cfg.Env.Formatter.Push()
 
 	mergeEnv := *cfg.Env
+	mergeEnv.PrettyLayerNames = prettyLayerNames
 	mergeEnv.Workdir = filepath.Join(mergeEnv.Workdir, "merge")
 	err = MergeImages(&mergeEnv, mergedImgName, baseImgName, buildNames...)
 	if err != nil {
