@@ -251,7 +251,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) (*BuildResult, error) {
 			RegistryToken: v.RegistryToken,
 		}
 	}
-	_, err = pullOrBuildImage(cfg, buildctxFn, dst, types.ImageBuildOptions{
+	err = buildImage(cfg, buildctxFn, dst, types.ImageBuildOptions{
 		PullParent:  true,
 		AuthConfigs: allAuth,
 		Dockerfile:  prologueDFN,
@@ -344,31 +344,41 @@ func pullOrBuildImage(cfg BuildConfig, buildctxFn, tag string, opts types.ImageB
 		return true, nil
 	}
 
-	// TODO: if the image isn't found here that merely means it isn't built yet - that's not worth a warning
 	if strings.Contains(err.Error(), "not found") {
 		log.WithError(err).Debug("image not built yet")
 	} else {
 		log.WithError(err).Warn("cannot pull image")
 	}
 
-	buildctx, err := os.OpenFile(buildctxFn, os.O_RDONLY, 0644)
+	err = buildImage(cfg, buildctxFn, tag, opts)
 	if err != nil {
 		return false, err
+	}
+
+	return false, nil
+}
+
+func buildImage(cfg BuildConfig, buildctxFn, tag string, opts types.ImageBuildOptions) error {
+	env := cfg.Env
+	termFd, isTerm := term.GetFdInfo(env.Out)
+	buildctx, err := os.OpenFile(buildctxFn, os.O_RDONLY, 0644)
+	if err != nil {
+		return err
 	}
 
 	opts.Tags = append(opts.Tags, tag)
 	bresp, err := env.Client.ImageBuild(env.Context, buildctx, opts)
 	if err != nil {
-		return false, err
+		return err
 	}
 	err = jsonmessage.DisplayJSONMessagesStream(bresp.Body, env.Out(), termFd, isTerm, nil)
 	if err != nil {
-		return false, err
+		return err
 	}
 	bresp.Body.Close()
 	buildctx.Close()
 
-	return false, nil
+	return nil
 }
 
 func pushImage(cfg BuildConfig, tag string) error {

@@ -110,6 +110,7 @@ func MergeImages(env *Environment, dest, base string, addons ...string) error {
 	wd := env.Workdir
 	os.RemoveAll(wd)
 	os.Mkdir(wd, 0755)
+	defer os.RemoveAll(wd)
 
 	// download images
 	log.WithField("step", 1).WithField("emoji", "🌟").Info("downloading images")
@@ -189,7 +190,7 @@ func MergeImages(env *Environment, dest, base string, addons ...string) error {
 		}
 	}
 
-	log.WithField("step", 5).WithField("emoji", "🙈").Info("pushing merged image")
+	log.WithField("step", 5).WithField("emoji", "🙈").WithField("ref", dest).Info("pushing merged image")
 	golog.SetOutput(env.Out())
 	err = dst.Save()
 	if err != nil {
