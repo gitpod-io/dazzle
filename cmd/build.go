@@ -21,11 +21,14 @@
 package cmd
 
 import (
+	"encoding/xml"
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	"github.com/32leaves/dazzle/pkg/dazzle"
 	"github.com/32leaves/dazzle/pkg/fancylog"
+	"github.com/32leaves/dazzle/pkg/test"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -82,7 +85,15 @@ var buildCmd = &cobra.Command{
 			BuildImageRepo: repo,
 		}
 
-		err = dazzle.Build(cfg, wd, dfn, tag)
+		res, err := dazzle.Build(cfg, wd, dfn, tag)
+		logBuildResult(res)
+		testXMLOutput, _ := cmd.Flags().GetString("output-test-xml")
+		if testXMLOutput != "" {
+			serr := saveTestXMLOutput(res, testXMLOutput)
+			if serr != nil {
+				log.WithError(serr).Error("cannot save test result")
+			}
+		}
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -97,4 +108,45 @@ func init() {
 	buildCmd.Flags().StringP("file", "f", "Dockerfile", "name of the Dockerfile")
 	buildCmd.Flags().StringP("tag", "t", "dazzle-built:latest", "tag of the resulting image")
 	buildCmd.Flags().StringP("repository", "r", "dazzle-work", "name of the Docker repository to work in (e.g. eu.gcr.io/someprj/dazzle-work)")
+	buildCmd.Flags().String("output-test-xml", "", "save the test results as JUnit XML file")
+}
+
+func logBuildResult(res *dazzle.BuildResult) {
+	if res == nil {
+		return
+	}
+
+	log.Info("build done")
+	log.WithField("size", res.BaseImage.Size).Debugf("base layer: %s", res.BaseImage.Ref)
+	for _, l := range res.Layers {
+		log.WithField("size", l.Size).WithField("ref", l.Ref).Debugf("  layer %s", l.LayerName)
+	}
+}
+
+func saveTestXMLOutput(res *dazzle.BuildResult, fn string) error {
+	var r test.Results
+	for _, l := range res.Layers {
+		ltr := l.TestResult
+		if ltr == nil {
+			continue
+		}
+
+		for _, tr := range ltr.Result {
+			ttr := *tr
+			ttr.Desc = fmt.Sprintf("%s: %s", l.LayerName, tr.Desc)
+			r.Result = append(r.Result, &ttr)
+		}
+	}
+
+	fc, err := xml.Marshal(r)
+	if err != nil {
+		return err
+	}
+
+	err = ioutil.WriteFile(fn, fc, 0644)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

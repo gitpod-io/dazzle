@@ -37,25 +37,41 @@ const (
 	labelTest  = "dazzle/test"
 )
 
+// BuildResult describes the information produced during a build
+type BuildResult struct {
+	BaseImage    LayerBuildResult
+	Layers       []LayerBuildResult
+	PrologueTest []*test.Results
+}
+
+// LayerBuildResult is the result of an individual layer build
+type LayerBuildResult struct {
+	Ref        string
+	Pulled     bool
+	LayerName  string
+	HasTest    bool
+	TestResult *test.Results
+	Size       int64
+}
+
 // Build builds a Dockerfile with independent layers
-func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
+func Build(cfg BuildConfig, loc, dockerfile, dst string) (*BuildResult, error) {
 	var step int
 
 	fullDFN := filepath.Join(loc, dockerfile)
-
 	parsedDF, err := ParseDockerfile(fullDFN)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if err = parsedDF.Validate(); err != nil {
-		return err
+		return nil, err
 	}
 
 	// compute splitpoints
 	sps, err := parsedDF.SplitPoints()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// split off base dockerfile
@@ -63,17 +79,21 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 	baseDFN := "dazzle___base.Dockerfile"
 	err = parsedDF.ExtractFrom(filepath.Join(loc, baseDFN), baseSP, "")
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// split off the addon dockerfiles (do this prior to creating the context)
 	baseHash, err := fileChecksum(filepath.Join(loc, baseDFN))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	baseImgName := fmt.Sprintf("%s:base-%s", cfg.BuildImageRepo, baseHash)
 
-	// split of addon Dockerfiles
+	var res BuildResult
+	res.BaseImage = LayerBuildResult{
+		Ref: baseImgName,
+	}
+
+	// split off the addon dockerfiles (do this prior to creating the context)
 	addons := sps[1:]
 	type buildSpec struct {
 		Dockerfile string
@@ -86,7 +106,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 		err = parsedDF.ExtractFrom(filepath.Join(loc, fn), sp, baseImgName)
 
 		if err != nil {
-			return err
+			return &res, err
 		}
 		builds = append(builds, buildSpec{fn, sp.Name, sp.Test})
 	}
@@ -94,19 +114,19 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 	// create the prologue Dockerfile
 	fullDfHash, err := fileChecksum(fullDFN)
 	if err != nil {
-		return err
+		return &res, err
 	}
 	mergedImgName := fmt.Sprintf("%s:merged-%s", cfg.BuildImageRepo, fullDfHash)
 	prologueDFN := "dazzle___prologue.Dockerfile"
 	err = parsedDF.ExtractEnvs(filepath.Join(loc, prologueDFN), mergedImgName)
 	if err != nil {
-		return err
+		return &res, err
 	}
 
 	// create build context
 	fns, err := ioutil.ReadDir(loc)
 	if err != nil {
-		return err
+		return &res, err
 	}
 	var buildctxCtnt []string
 	for _, bfi := range fns {
@@ -116,7 +136,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 	os.Remove(buildctxFn)
 	err = archiver.Archive(buildctxCtnt, buildctxFn)
 	if err != nil {
-		return err
+		return &res, err
 	}
 	log.WithField("buildContext", buildctxFn).WithField("emoji", "🏠").WithField("step", step).Info("created build context")
 	step++
@@ -129,14 +149,17 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 		Dockerfile: baseDFN,
 	})
 	if err != nil {
-		return err
+		return &res, err
 	}
 	if !pulledBaseImg {
 		err = pushImage(cfg, baseImgName)
 		if err != nil {
-			return err
+			return &res, err
 		}
 	}
+	baseImgInspct, _, _ := cfg.Env.Client.ImageInspectWithRaw(cfg.Env.Context, baseImgName)
+	res.BaseImage.Size = baseImgInspct.Size
+	res.BaseImage.Pulled = pulledBaseImg
 
 	// build addons
 	var buildNames []string
@@ -148,25 +171,34 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 
 		dfhash, err := fileChecksum(filepath.Join(loc, bd.Dockerfile))
 		if err != nil {
-			return err
+			return &res, err
 		}
 		buildName := fmt.Sprintf("%s:build-%s", cfg.BuildImageRepo, dfhash)
 		pulledImg, err := pullOrBuildImage(cfg, buildctxFn, buildName, types.ImageBuildOptions{
 			Dockerfile: bd.Dockerfile,
 		})
 		if err != nil {
-			return err
+			return &res, err
 		}
 		buildNames = append(buildNames, buildName)
 		prettyLayerNames[buildName] = bd.Layer
 
+		layerres := LayerBuildResult{
+			Ref:       buildName,
+			Pulled:    pulledImg,
+			LayerName: bd.Layer,
+			HasTest:   bd.Test != "",
+		}
+
 		if bd.Test != "" {
 			testfn := filepath.Join(loc, bd.Test)
 			cfg.Env.Formatter.Push()
-			_, err = testImage(cfg, bd.Layer, buildName, testfn)
+			layerres.TestResult, err = testImage(cfg, bd.Layer, buildName, testfn)
 			cfg.Env.Formatter.Pop()
 			if err != nil {
-				return err
+				// add this layer to the results so that the test result is part of the overall build result
+				res.Layers = append(res.Layers, layerres)
+				return &res, err
 			}
 
 			testSuites = append(testSuites, testfn)
@@ -175,33 +207,37 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 		if !pulledImg {
 			err = pushImage(cfg, buildName)
 			if err != nil {
-				return err
+				return &res, err
 			}
 		}
+
+		imginspct, _, err := cfg.Env.Client.ImageInspectWithRaw(cfg.Env.Context, buildName)
+		if err == nil {
+			layerres.Size = imginspct.Size - res.BaseImage.Size
+		}
+		res.Layers = append(res.Layers, layerres)
 	}
 
 	// merge the whole thing
 	log.WithField("emoji", "🤘").WithField("step", step).Info("merging images")
 	step++
 
-	cfg.Env.Formatter.Push()
-
 	mergeEnv := *cfg.Env
 	mergeEnv.PrettyLayerNames = prettyLayerNames
 	mergeEnv.Workdir = filepath.Join(mergeEnv.Workdir, "merge")
+	cfg.Env.Formatter.Push()
 	err = MergeImages(&mergeEnv, mergedImgName, baseImgName, buildNames...)
-	if err != nil {
-		return err
-	}
-
 	cfg.Env.Formatter.Pop()
+	if err != nil {
+		return &res, err
+	}
 
 	// build image with prologue
 	log.WithField("emoji", "👷").WithField("step", step).Info("building prologue image")
 	step++
 	allCliAuth, err := cfg.Env.DockerCfg.GetAllCredentials()
 	if err != nil {
-		return err
+		return &res, err
 	}
 	allAuth := make(map[string]types.AuthConfig)
 	for k, v := range allCliAuth {
@@ -221,26 +257,30 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) error {
 		Dockerfile:  prologueDFN,
 	})
 	if err != nil {
-		return err
+		return &res, err
 	}
 
 	// if there are tests, run them against the final image
+	var ptr []*test.Results
 	for _, testfn := range testSuites {
 		cfg.Env.Formatter.Push()
-		_, err = testImage(cfg, testfn, dst, testfn)
+		tr, err := testImage(cfg, testfn, dst, testfn)
 		cfg.Env.Formatter.Pop()
 		if err != nil {
-			return err
+			return &res, err
 		}
+
+		ptr = append(ptr, tr)
 	}
+	res.PrologueTest = ptr
 
 	// finally push the whole thing
 	err = pushImage(cfg, dst)
 	if err != nil {
-		return err
+		return &res, err
 	}
 
-	return nil
+	return &res, nil
 }
 
 func testImage(cfg BuildConfig, layerName, image, testfn string) (res *test.Results, err error) {

@@ -3,6 +3,7 @@ package fancylog
 import (
 	"github.com/gookit/color"
 	"github.com/sirupsen/logrus"
+	"sort"
 )
 
 // Formatter formats log output
@@ -17,7 +18,7 @@ const DefaultIndent = "              "
 func (f *Formatter) Format(entry *logrus.Entry) ([]byte, error) {
 	var res []byte
 	for i := 0; i < f.Level; i++ {
-		res = append(res, []byte(color.BgWhite.Sprint("  "))...)
+		res = append(res, []byte("  ")...)
 	}
 
 	step, ok := entry.Data["step"]
@@ -51,12 +52,22 @@ func (f *Formatter) Format(entry *logrus.Entry) ([]byte, error) {
 	}
 	res = append(res, []byte(cl.Sprintf("%-44s", entry.Message))...)
 
-	for k, v := range entry.Data {
+	var keys []string
+	for k := range entry.Data {
 		if k == "step" || k == "emoji" {
 			continue
 		}
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	for _, k := range keys {
+		v := entry.Data[k]
 
-		res = append(res, []byte(color.FgDarkGray.Sprintf("%s=\"%s\" ", k, v))...)
+		if _, ok := v.(string); ok {
+			res = append(res, []byte(color.FgDarkGray.Sprintf("%s=\"%s\" ", k, v))...)
+		} else {
+			res = append(res, []byte(color.FgDarkGray.Sprintf("%s=%v ", k, v))...)
+		}
 	}
 
 	res = append(res, '\n')

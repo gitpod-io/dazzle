@@ -66,7 +66,7 @@ var testRunCmd = &cobra.Command{
 
 		results, success := test.RunTests(context.Background(), env.Client, imageRef, tests)
 
-		xmlout, _ := cmd.Flags().GetString("output-xml")
+		xmlout, _ := cmd.Flags().GetString("output-test-xml")
 		if xmlout != "" {
 			fc, err := xml.MarshalIndent(results, "  ", "    ")
 			if err != nil {
@@ -90,5 +90,5 @@ var testRunCmd = &cobra.Command{
 func init() {
 	testCmd.AddCommand(testRunCmd)
 
-	testRunCmd.Flags().String("output-xml", "", "save result as JUnit XML file")
+	testRunCmd.Flags().String("output-test-xml", "", "save result as JUnit XML file")
 }
