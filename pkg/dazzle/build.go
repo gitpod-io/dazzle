@@ -309,7 +309,13 @@ func getDockerAuthForTag(cfg BuildConfig, tag string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	reg := reference.Domain(ref)
+	if reg == "docker.io" {
+		// somehow docker.io is registered as index.docker.io in the Docker config file.
+		reg = "index.docker.io"
+	}
+
 	auth, err := cfg.Env.DockerCfg.GetAuthConfig(reg)
 	if err != nil {
 		return "", err
