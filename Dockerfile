@@ -1,4 +1,4 @@
-FROM alpine:3.9
+FROM docker:stable
 WORKDIR /dazzle
 COPY dazzle README.md /dazzle/
 ENTRYPOINT [ "/dazzle/dazzle" ]
