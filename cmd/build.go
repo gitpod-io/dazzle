@@ -124,6 +124,10 @@ func logBuildResult(res *dazzle.BuildResult) {
 }
 
 func saveTestXMLOutput(res *dazzle.BuildResult, fn string) error {
+	if res == nil {
+		return nil
+	}
+
 	var r test.Results
 	for _, l := range res.Layers {
 		ltr := l.TestResult
