@@ -1,5 +1,9 @@
 <img src="logo.png" width="100">
 
+[![Setup Automated](https://img.shields.io/badge/setup-automated-blue?logo=gitpod)](https://gitpod.io/#https://github.com/32leaves/dazzle)
+![Go Repord Cart](https://goreportcard.com/badge/github.com/32leaves/dazzle)
+[![Stability: Experimental](https://masterminds.github.io/stability/experimental.svg)](https://masterminds.github.io/stability/experimental.html)
+
 dazzle is a rather experimental Docker image builder. Its goal is to build independent layers where a change to one layer does *not* invalidate the ones sitting "above" it. To this end, dazzle uses black magic.
 
 ## How does it work?
