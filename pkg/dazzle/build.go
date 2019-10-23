@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/32leaves/dazzle/pkg/test"
+	"github.com/docker/distribution/reference"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/term"
@@ -304,7 +305,11 @@ func testImage(cfg BuildConfig, layerName, image, testfn string) (res *test.Resu
 }
 
 func getDockerAuthForTag(cfg BuildConfig, tag string) (string, error) {
-	reg := strings.Split(strings.Split(tag, ":")[0], "/")[0]
+	ref, err := reference.ParseNormalizedNamed(tag)
+	if err != nil {
+		return "", err
+	}
+	reg := reference.Domain(ref)
 	auth, err := cfg.Env.DockerCfg.GetAuthConfig(reg)
 	if err != nil {
 		return "", err
@@ -316,6 +321,8 @@ func getDockerAuthForTag(cfg BuildConfig, tag string) (string, error) {
 	authStr := base64.URLEncoding.EncodeToString(encodedJSON)
 	if auth.Username != "" {
 		log.WithField("registry", reg).WithField("username", auth.Username).Debug("authenticating during operation")
+	} else {
+		log.WithField("registry", reg).Debug("no authentication for this operation")
 	}
 
 	return authStr, nil
