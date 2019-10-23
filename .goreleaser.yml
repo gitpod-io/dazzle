@@ -19,3 +19,18 @@ changelog:
     exclude:
     - '^docs:'
     - '^test:'
+dockers:
+  -
+    goos: linux
+    goarch: amd64
+    goarm: ''
+    binaries:
+    - dazzle
+    dockerfile: Dockerfile
+    image_templates:
+    - "csweichel/dazzle:{{ .Tag }}"
+    - "csweichel/dazzle:v{{ .Major }}"
+    - "csweichel/dazzle:v{{ .Major }}.{{ .Minor }}"
+    - "csweichel/dazzle:latest"
+    extra_files:
+    - README.md
