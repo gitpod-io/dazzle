@@ -14,7 +14,21 @@ builds:
   ldflags:
   - -s -w -X github.com/32leaves/dazzle/cmd/util.version={{.Version}}-{{.ShortCommit}}
 archives:
-- replacements:
+- id: dazzle
+  replacements:
+    darwin: Darwin
+    linux: Linux
+    386: i386
+    amd64: x86_64
+  builds:
+  - dazzle
+- id: dazzle-util
+  files:
+  - "none*"
+  format: binary
+  builds:
+  - dazzle-util
+  replacements:
     darwin: Darwin
     linux: Linux
     386: i386
@@ -29,6 +43,8 @@ changelog:
     exclude:
     - '^docs:'
     - '^test:'
+release:
+  prerelease: auto
 dockers:
   -
     goos: linux
