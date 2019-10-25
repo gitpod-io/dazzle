@@ -300,7 +300,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) (*BuildResult, error) {
 }
 
 func writePrologueDockerfile(fn, baseImage string, df *ParsedDockerfile, prologueSP *SplitPoint) error {
-	prologueFile, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY, 0644)
+	prologueFile, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}

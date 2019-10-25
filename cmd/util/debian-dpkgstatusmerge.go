@@ -18,29 +18,37 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package cmd
+package util
 
 import (
-	"log"
+	"os"
 
+	"github.com/32leaves/dazzle/pkg/util/debian"
+
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-
-	"github.com/32leaves/dazzle/pkg/dazzle"
 )
 
-// mergeCmd represents the merge command
-var mergeCmd = &cobra.Command{
-	Use:   "merge <dst> <base> <addons>...",
-	Short: "Merges a set of Docker images onto a base image.",
-	Long:  `Attempts to merge the layers of all addon images onto the base image producing the new dst image. We assume that all addon images have been built FROM base. All images must be present/pulled to the Docker damon already. All image names must be valid Docker references.`,
-	Args:  cobra.MinimumNArgs(3),
+var debianDpkgStatusMergeCmd = &cobra.Command{
+	Use:   "dpkg-status-merge <old-status> <new-status>",
+	Short: "Updates the old status file and overwrites it with values from the new status file",
+	Args:  cobra.MinimumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		env, err := dazzle.NewEnvironment()
+		old, err := debian.LoadDpkgStatus(args[0])
 		if err != nil {
-			log.Fatal(err)
+			log.WithField("filename", args[0]).Fatal(err)
 		}
 
-		err = dazzle.MergeImages(env, args[0], args[1], args[2:]...)
+		new, err := debian.LoadDpkgStatus(args[1])
+		if err != nil {
+			log.WithField("filename", args[1]).Fatal(err)
+		}
+
+		for k, v := range new.Index {
+			old.Index[k] = v
+		}
+
+		err = debian.SaveDpkgStatus(os.Stdout, old)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -48,5 +56,5 @@ var mergeCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(mergeCmd)
+	debianCmd.AddCommand(debianDpkgStatusMergeCmd)
 }

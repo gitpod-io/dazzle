@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package cmd
+package core
 
 import (
 	"encoding/xml"
@@ -79,6 +79,8 @@ var buildCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 		env.Formatter = formatter
+
+		log.WithField("version", version).Debug("this is dazzle")
 
 		cfg := dazzle.BuildConfig{
 			Env:            env,

@@ -18,12 +18,25 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// +build !util
+package core
 
-package main
+import (
+	"fmt"
 
-import cmd "github.com/32leaves/dazzle/cmd/core"
+	"github.com/spf13/cobra"
+)
 
-func main() {
-	cmd.Execute()
+var version = "unknown"
+
+// versionCmd represents the version command
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Prints the dazzling version",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(version)
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(versionCmd)
 }

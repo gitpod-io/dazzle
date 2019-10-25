@@ -18,34 +18,25 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package cmd
+package util
 
 import (
 	"fmt"
-	"os"
 
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
-// rootCmd represents the base command when called without any subcommands
-var rootCmd = &cobra.Command{
-	Use:   "dazzle",
-	Short: "Dazzle is a very experimental Docker image builder with independent layers",
-	Long: `Dazzle breaks your usual Docker build by separating the layers. The idea is that
-this way we can avoid needless cache invalidation.
+var version = "unknown"
 
-THIS IS AN EXPERIEMENT. THINGS WILL BREAK. BEWARE.`,
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		logrus.SetLevel(logrus.DebugLevel)
+// versionCmd represents the version command
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Prints the dazzling version",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(version)
 	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+func init() {
+	rootCmd.AddCommand(versionCmd)
 }

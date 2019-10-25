@@ -18,12 +18,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// +build !util
+package core
 
-package main
+import (
+	"github.com/spf13/cobra"
+)
 
-import cmd "github.com/32leaves/dazzle/cmd/core"
+var testCmd = &cobra.Command{
+	Use:   "test <command>",
+	Short: "works with image tests",
+	Args:  cobra.MinimumNArgs(1),
+}
 
-func main() {
-	cmd.Execute()
+func init() {
+	rootCmd.AddCommand(testCmd)
 }

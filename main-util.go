@@ -18,11 +18,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// +build !util
+// +build util
 
 package main
 
-import cmd "github.com/32leaves/dazzle/cmd/core"
+import cmd "github.com/32leaves/dazzle/cmd/util"
 
 func main() {
 	cmd.Execute()

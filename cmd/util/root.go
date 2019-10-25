@@ -18,12 +18,31 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// +build !util
+package util
 
-package main
+import (
+	"fmt"
+	"os"
 
-import cmd "github.com/32leaves/dazzle/cmd/core"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+)
 
-func main() {
-	cmd.Execute()
+// rootCmd represents the base command when called without any subcommands
+var rootCmd = &cobra.Command{
+	Use:   "dazzle-util",
+	Short: "dazzle-util is random collection of utilities that make working dazzle easier",
+	Args:  cobra.ExactArgs(1),
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		logrus.SetLevel(logrus.DebugLevel)
+	},
+}
+
+// Execute adds all child commands to the root command and sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the rootCmd.
+func Execute() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }

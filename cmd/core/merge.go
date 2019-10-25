@@ -18,18 +18,35 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package cmd
+package core
 
 import (
+	"log"
+
 	"github.com/spf13/cobra"
+
+	"github.com/32leaves/dazzle/pkg/dazzle"
 )
 
-var testCmd = &cobra.Command{
-	Use:   "test <command>",
-	Short: "works with image tests",
-	Args:  cobra.MinimumNArgs(1),
+// mergeCmd represents the merge command
+var mergeCmd = &cobra.Command{
+	Use:   "merge <dst> <base> <addons>...",
+	Short: "Merges a set of Docker images onto a base image.",
+	Long:  `Attempts to merge the layers of all addon images onto the base image producing the new dst image. We assume that all addon images have been built FROM base. All images must be present/pulled to the Docker damon already. All image names must be valid Docker references.`,
+	Args:  cobra.MinimumNArgs(3),
+	Run: func(cmd *cobra.Command, args []string) {
+		env, err := dazzle.NewEnvironment()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = dazzle.MergeImages(env, args[0], args[1], args[2:]...)
+		if err != nil {
+			log.Fatal(err)
+		}
+	},
 }
 
 func init() {
-	rootCmd.AddCommand(testCmd)
+	rootCmd.AddCommand(mergeCmd)
 }
