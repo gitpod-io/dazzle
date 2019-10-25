@@ -1,6 +1,7 @@
 package dazzle
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
@@ -36,6 +37,8 @@ type BuildConfig struct {
 const (
 	labelLayer = "dazzle/layer"
 	labelTest  = "dazzle/test"
+
+	layerNamePrologue = "dazzle-prologue"
 )
 
 // BuildResult describes the information produced during a build
@@ -78,7 +81,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) (*BuildResult, error) {
 	// split off base dockerfile
 	baseSP := sps[0]
 	baseDFN := "dazzle___base.Dockerfile"
-	err = parsedDF.ExtractFrom(filepath.Join(loc, baseDFN), baseSP, "")
+	err = parsedDF.ExtractTo(filepath.Join(loc, baseDFN), baseSP, "")
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +97,13 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) (*BuildResult, error) {
 		Ref: baseImgName,
 	}
 
+	// split off the prologue part
+	var prologueSP *SplitPoint
+	if ls := sps[len(sps)-1]; ls.Name == layerNamePrologue {
+		prologueSP = &ls
+		sps = sps[:len(sps)-1]
+	}
+
 	// split off the addon dockerfiles (do this prior to creating the context)
 	addons := sps[1:]
 	type buildSpec struct {
@@ -104,7 +114,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) (*BuildResult, error) {
 	var builds []buildSpec
 	for _, sp := range addons {
 		fn := fmt.Sprintf("dazzle__%s.Dockerfile", sp.Name)
-		err = parsedDF.ExtractFrom(filepath.Join(loc, fn), sp, baseImgName)
+		err = parsedDF.ExtractTo(filepath.Join(loc, fn), sp, baseImgName)
 
 		if err != nil {
 			return &res, err
@@ -119,7 +129,7 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) (*BuildResult, error) {
 	}
 	mergedImgName := fmt.Sprintf("%s:merged-%s", cfg.BuildImageRepo, fullDfHash)
 	prologueDFN := "dazzle___prologue.Dockerfile"
-	err = parsedDF.ExtractEnvs(filepath.Join(loc, prologueDFN), mergedImgName)
+	err = writePrologueDockerfile(filepath.Join(loc, prologueDFN), mergedImgName, parsedDF, prologueSP)
 	if err != nil {
 		return &res, err
 	}
@@ -163,8 +173,10 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) (*BuildResult, error) {
 	res.BaseImage.Pulled = pulledBaseImg
 
 	// build addons
-	var buildNames []string
-	var testSuites []string
+	var (
+		buildNames []string
+		testSuites []string
+	)
 	prettyLayerNames := make(map[string]string)
 	for _, bd := range builds {
 		log.WithField("name", bd.Layer).WithField("emoji", "👷").WithField("step", step).Info("building addon image")
@@ -260,6 +272,9 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) (*BuildResult, error) {
 	if err != nil {
 		return &res, err
 	}
+	if prologueSP != nil {
+		testSuites = append(testSuites, filepath.Join(loc, prologueSP.Test))
+	}
 
 	// if there are tests, run them against the final image
 	var ptr []*test.Results
@@ -282,6 +297,41 @@ func Build(cfg BuildConfig, loc, dockerfile, dst string) (*BuildResult, error) {
 	}
 
 	return &res, nil
+}
+
+func writePrologueDockerfile(fn, baseImage string, df *ParsedDockerfile, prologueSP *SplitPoint) error {
+	prologueFile, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer prologueFile.Close()
+
+	f := bufio.NewWriter(prologueFile)
+	defer f.Flush()
+
+	_, err = prologueFile.Write([]byte(fmt.Sprintf("FROM %s\n", baseImage)))
+	if err != nil {
+		return err
+	}
+	f.WriteString("\n# BEGINNING OF env\n")
+	err = df.ExtractEnvs(f, baseImage)
+	if err != nil {
+		return err
+	}
+	f.WriteString("\n# END OF env\n")
+	f.Flush()
+
+	if prologueSP != nil {
+		f.WriteString("\n# BEGINNING OF prologue layer\n")
+		err = df.ExtractFrom(f, *prologueSP, "")
+		if err != nil {
+			return err
+		}
+		f.WriteString("\n# END OF prologue layer\n")
+		f.Flush()
+	}
+
+	return nil
 }
 
 func testImage(cfg BuildConfig, layerName, image, testfn string) (res *test.Results, err error) {
@@ -531,26 +581,36 @@ func (df *ParsedDockerfile) SplitPoints() ([]SplitPoint, error) {
 	return sps, nil
 }
 
-// ExtractFrom extracts a new Dockerfile at the given splitpoint
-func (df *ParsedDockerfile) ExtractFrom(fn string, sp SplitPoint, baseImage string) error {
-	// fn = fmt.Sprintf("dazzle__%s.Dockerfile", sp.Name)
+// ExtractTo extracts a new Dockerfile at the given splitpoint
+func (df *ParsedDockerfile) ExtractTo(fn string, sp SplitPoint, baseImage string) error {
+	f, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
 
+	return df.ExtractFrom(f, sp, baseImage)
+}
+
+// ExtractFrom extracts a new Dockerfile at the given splitpoint
+func (df *ParsedDockerfile) ExtractFrom(out io.Writer, sp SplitPoint, baseImage string) error {
 	var ctnt []string
 	if baseImage != "" {
 		ctnt = append(ctnt, fmt.Sprintf("FROM %s", baseImage))
 	}
 	ctnt = append(ctnt, df.Lines[sp.StartLine:sp.EndLine]...)
 
-	err := ioutil.WriteFile(filepath.Join(fn), []byte(strings.Join(ctnt, "\n")), 0644)
-	if err != nil {
-		return err
+	data := []byte(strings.Join(ctnt, "\n"))
+	n, err := out.Write(data)
+	if err == nil && n < len(data) {
+		err = io.ErrShortWrite
 	}
 
 	return nil
 }
 
 // ExtractEnvs creates a new Dockerfile which only contains the ENV statements of the parent
-func (df *ParsedDockerfile) ExtractEnvs(fn, baseImage string) error {
+func (df *ParsedDockerfile) ExtractEnvs(out io.Writer, fn string) error {
 	var envlines []string
 	for _, tkn := range df.AST.Children {
 		if tkn.Value != command.Env {
@@ -560,10 +620,11 @@ func (df *ParsedDockerfile) ExtractEnvs(fn, baseImage string) error {
 		envlines = append(envlines, df.Lines[tkn.StartLine-1:tkn.EndLine]...)
 	}
 
-	newDockerfile := strings.Join(append([]string{fmt.Sprintf("FROM %s", baseImage)}, envlines...), "\n")
-	err := ioutil.WriteFile(fn, []byte(newDockerfile), 0644)
-	if err != nil {
-		return err
+	newDockerfile := strings.Join(envlines, "\n")
+	data := []byte(newDockerfile)
+	n, err := out.Write(data)
+	if err == nil && n < len(data) {
+		err = io.ErrShortWrite
 	}
 
 	return nil

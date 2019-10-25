@@ -16,3 +16,8 @@ RUN apk add --no-cache nodejs
 ENV LANG=en_US.UTF-8
 ENV APACHE_DOCROOT_IN_REPO="public"
 ENV NGINX_DOCROOT_IN_REPO="public"
+
+
+LABEL dazzle/layer=dazzle-prologoue
+LABEL dazzle/test=example-test.yaml
+RUN echo "hello prologue"
