@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/32leaves/dazzle/pkg/test"
+	containertest "github.com/32leaves/dazzle/pkg/test/container"
 	"github.com/docker/distribution/reference"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/pkg/jsonmessage"
@@ -346,7 +347,7 @@ func testImage(cfg BuildConfig, layerName, image, testfn string) (res *test.Resu
 		return nil, err
 	}
 
-	rawres, success := test.RunTests(cfg.Env.Context, cfg.Env.Client, image, tests)
+	rawres, success := test.RunTests(cfg.Env.Context, containertest.DockerExecutor{Client: cfg.Env.Client, ImageRef: image}, tests)
 	if !success {
 		return nil, fmt.Errorf("tests failed")
 	}

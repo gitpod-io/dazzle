@@ -7,6 +7,7 @@ require (
 	github.com/alecthomas/jsonschema v0.0.0-20191017121752-4bb6e3fae4f2
 	github.com/alecthomas/repr v0.0.0-20181024024818-d37bc2a10ba1
 	github.com/buildpack/imgutil v0.0.0-20191010153712-78959154ded1
+	github.com/creack/pty v1.1.9
 	github.com/docker/cli v0.0.0-20190321234815-f40f9c240ab0
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/docker/docker v1.14.0-0.20190319215453-e7b5f7dbe98c

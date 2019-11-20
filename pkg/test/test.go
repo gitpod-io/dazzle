@@ -5,16 +5,18 @@ package test
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/xml"
 	"fmt"
+	"os"
+	"os/exec"
+	"os/user"
+	"strconv"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/alecthomas/repr"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/creack/pty"
 	"github.com/robertkrimen/otto"
 	log "github.com/sirupsen/logrus"
 )
@@ -36,8 +38,7 @@ type Spec struct {
 type Result struct {
 	XMLName xml.Name `xml:"testsuite"`
 
-	Desc     string `yaml:"desc" xml:"name,attr"`
-	ImageRef string `yaml:"image" xml:"classname,attr"`
+	Desc string `yaml:"desc" xml:"name,attr"`
 
 	Skipped bool       `yaml:"skipped,omitempty" xml:"skippped"`
 	Error   *ErrResult `yaml:"error,omitempty" xml:"error"`
@@ -59,8 +60,104 @@ type Results struct {
 	Result []*Result `yaml:"results" xml:"testsuite"`
 }
 
+// Executor can run test commands in some environment
+type Executor interface {
+	Run(ctx context.Context, spec *Spec) (*RunResult, error)
+}
+
+// RunResult is the direct output produced by a test container
+type RunResult struct {
+	Stdout     []byte `yaml:"stdout,omitempty" xml:"system-out,omitempty"`
+	Stderr     []byte `yaml:"stderr,omitempty" xml:"system-err,omitempty"`
+	StatusCode int64  `yaml:"statusCode" xml:"-"`
+}
+
+// LocalExecutor executes tests against the current, local environment
+type LocalExecutor struct{}
+
+// Run executes the test
+func (LocalExecutor) Run(ctx context.Context, s *Spec) (res *RunResult, err error) {
+	env := os.Environ()
+	for _, envvar := range s.Env {
+		segs := strings.Split(envvar, "=")
+		if len(segs) != 2 {
+			log.WithField("test", s.Desc).WithField("envvar", envvar).Warn("invalid format - ignoring this envvar")
+		}
+		nme := segs[0]
+
+		var found bool
+		for i, exenvvar := range env {
+			segs := strings.Split(exenvvar, "=")
+			if segs[0] != nme {
+				continue
+			}
+
+			env[i] = envvar
+			found = true
+		}
+		if found {
+			continue
+		}
+
+		env = append(env, envvar)
+	}
+
+	var cmd *exec.Cmd
+	if len(s.Entrypoint) > 0 {
+		var args []string
+		args = append(args, s.Entrypoint[1:]...)
+		args = append(args, s.Command...)
+		cmd = exec.Command(s.Entrypoint[0], args...)
+	} else {
+		cmd = exec.Command(s.Command[0], s.Command[1:]...)
+	}
+	cmd.Env = env
+	stdout, stderr := bytes.NewBuffer([]byte{}), bytes.NewBuffer([]byte{})
+	if s.User != "" {
+		user, err := user.LookupId(s.User)
+		if err != nil {
+			return nil, err
+		}
+		uid, err := strconv.ParseUint(user.Uid, 10, 32)
+		if err != nil {
+			return nil, err
+		}
+		gid, err := strconv.ParseUint(user.Gid, 10, 32)
+		if err != nil {
+			return nil, err
+		}
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}}
+	}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+
+	if len(s.Entrypoint) > 0 {
+		log.Warn("running in pseudo-tty because of the entrypoint - make sure the entrypoint can deal with this")
+		_, err := pty.Start(cmd)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err = cmd.Start()
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = cmd.Wait()
+	if err != nil {
+		return nil, err
+	}
+
+	res = &RunResult{
+		Stdout:     stdout.Bytes(),
+		Stderr:     stderr.Bytes(),
+		StatusCode: int64(cmd.ProcessState.ExitCode()),
+	}
+	return
+}
+
 // RunTests executes a series of tests
-func RunTests(ctx context.Context, docker *client.Client, imageRef string, tests []*Spec) (res Results, success bool) {
+func RunTests(ctx context.Context, executor Executor, tests []*Spec) (res Results, success bool) {
 	success = true
 
 	var results []*Result
@@ -72,7 +169,7 @@ func RunTests(ctx context.Context, docker *client.Client, imageRef string, tests
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		r := tst.Run(ctx, docker, imageRef)
+		r := tst.Run(ctx, executor)
 		results = append(results, r)
 		cancel()
 
@@ -90,7 +187,7 @@ func RunTests(ctx context.Context, docker *client.Client, imageRef string, tests
 			continue
 		}
 
-		log.WithField("status", "passed").Info("passed")
+		log.Info("passed")
 		continue
 	}
 
@@ -99,21 +196,20 @@ func RunTests(ctx context.Context, docker *client.Client, imageRef string, tests
 }
 
 // Run executes the test
-func (s *Spec) Run(ctx context.Context, docker *client.Client, imageRef string) (res *Result) {
+func (s *Spec) Run(ctx context.Context, executor Executor) (res *Result) {
 	res = &Result{
-		Desc:     s.Desc,
-		ImageRef: imageRef,
-		Skipped:  s.Skip,
+		Desc:    s.Desc,
+		Skipped: s.Skip,
 	}
 	if s.Skip {
 		return
 	}
 
-	runres, err := s.RunContainer(ctx, docker, imageRef)
+	runres, err := executor.Run(ctx, s)
 	if err != nil {
 		res.Error = &ErrResult{
 			Message: err.Error(),
-			Type:    "docker",
+			Type:    "runtime",
 		}
 		return
 	}
@@ -164,72 +260,4 @@ func ValidateAssertions(res *Result, assertions []string, runres *RunResult) err
 	}
 
 	return nil
-}
-
-// RunResult is the direct output produced by a test container
-type RunResult struct {
-	Stdout     []byte `yaml:"stdout,omitempty" xml:"system-out,omitempty"`
-	Stderr     []byte `yaml:"stderr,omitempty" xml:"system-err,omitempty"`
-	StatusCode int64  `yaml:"statusCode" xml:"-"`
-}
-
-// RunContainer executes the test spec in a Docker container
-func (s *Spec) RunContainer(ctx context.Context, docker *client.Client, imageRef string) (*RunResult, error) {
-	containerName := fmt.Sprintf("dazzle-test-%x", sha256.Sum256([]byte(fmt.Sprintf("%s-%s-%d", imageRef, s.Desc, time.Now().UnixNano()))))
-	ctnt, err := docker.ContainerCreate(ctx, &container.Config{
-		Image:        imageRef,
-		User:         s.User,
-		Env:          s.Env,
-		Cmd:          s.Command,
-		Entrypoint:   s.Entrypoint,
-		Tty:          false,
-		AttachStdout: true,
-		AttachStderr: true,
-	}, &container.HostConfig{}, nil, containerName)
-	if err != nil {
-		return nil, err
-	}
-	defer docker.ContainerRemove(ctx, ctnt.ID, types.ContainerRemoveOptions{Force: true})
-
-	atch, err := docker.ContainerAttach(ctx, ctnt.ID, types.ContainerAttachOptions{
-		Stream: true,
-		Stdin:  false,
-		Stdout: true,
-		Stderr: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	errchan := make(chan error, 1)
-	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
-	go func() {
-		_, err := stdcopy.StdCopy(stdout, stderr, atch.Reader)
-		errchan <- err
-	}()
-
-	err = docker.ContainerStart(ctx, ctnt.ID, types.ContainerStartOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	var statusCode int64
-	okchan, cerrchan := docker.ContainerWait(ctx, ctnt.ID, container.WaitConditionNotRunning)
-	select {
-	case ste := <-okchan:
-		statusCode = ste.StatusCode
-	case err := <-cerrchan:
-		return nil, err
-	}
-
-	err = <-errchan
-	if err != nil {
-		return nil, err
-	}
-
-	return &RunResult{
-		Stdout:     stdout.Bytes(),
-		Stderr:     stderr.Bytes(),
-		StatusCode: statusCode,
-	}, nil
 }

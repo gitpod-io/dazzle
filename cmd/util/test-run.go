@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package core
+package util
 
 import (
 	"context"
@@ -30,28 +30,22 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 
-	"github.com/32leaves/dazzle/pkg/dazzle"
 	"github.com/32leaves/dazzle/pkg/fancylog"
 	"github.com/32leaves/dazzle/pkg/test"
-	containertest "github.com/32leaves/dazzle/pkg/test/container"
 )
 
 var testRunCmd = &cobra.Command{
-	Use:   "run <image> <test00.yaml> ... <testN.yaml>",
+	Use:   "run <test00.yaml> ... <testN.yaml>",
 	Short: "Runs a dazzle test suite",
-	Args:  cobra.MinimumNArgs(2),
+	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		log.SetFormatter(&fancylog.Formatter{})
-		env, err := dazzle.NewEnvironment()
-		if err != nil {
-			log.Fatal(err)
-		}
 
-		imageRef, testFiles := args[0], args[1:]
+		testFiles := args
 		var tests []*test.Spec
 
 		for _, fn := range testFiles {
-			fc, err := ioutil.ReadFile(args[0])
+			fc, err := ioutil.ReadFile(fn)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -65,11 +59,7 @@ var testRunCmd = &cobra.Command{
 			tests = append(tests, t...)
 		}
 
-		executor := containertest.DockerExecutor{
-			Client:   env.Client,
-			ImageRef: imageRef,
-		}
-		results, success := test.RunTests(context.Background(), executor, tests)
+		results, success := test.RunTests(context.Background(), test.LocalExecutor{}, tests)
 
 		xmlout, _ := cmd.Flags().GetString("output-test-xml")
 		if xmlout != "" {
