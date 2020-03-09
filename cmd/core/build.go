@@ -35,36 +35,38 @@ import (
 
 // buildCmd represents the build command
 var buildCmd = &cobra.Command{
-	Use:   "build [context]",
+	Use:   "build",
 	Short: "Builds a Docker image with independent layers",
-	Args:  cobra.MaximumNArgs(1),
+	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		formatter := &fancylog.Formatter{}
 		log.SetFormatter(formatter)
 
-		var wd string
-		if len(args) > 0 {
-			wd = args[0]
+		wd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
 
-			if stat, err := os.Stat(wd); os.IsNotExist(err) || !stat.IsDir() {
-				return fmt.Errorf("context %s must be a directory", wd)
-			}
+		chunk, err := cmd.Flags().GetString("chunk")
+		if err != nil {
+			return err
+		}
+		all, err := cmd.Flags().GetBool("all")
+		if err != nil {
+			return err
+		}
+
+		var chunks []string
+		if chunk != "" && all {
+			log.Fatal("cannot use --all and --chunk at the same time")
+		} else if chunk != "" {
+			chunks = append(chunks, chunk)
+		} else if all {
+			chunks = findChunks(wd)
 		} else {
-			var err error
-			wd, err = os.Getwd()
-			if err != nil {
-				return err
-			}
+			log.Fatal("missing either --all or --chunk")
 		}
 
-		dfn, err := cmd.Flags().GetString("file")
-		if err != nil {
-			return err
-		}
-		tag, err := cmd.Flags().GetString("tag")
-		if err != nil {
-			return err
-		}
 		repo, err := cmd.Flags().GetString("repository")
 		if err != nil {
 			return err
@@ -85,17 +87,12 @@ var buildCmd = &cobra.Command{
 		cfg := dazzle.BuildConfig{
 			Env:            env,
 			BuildImageRepo: repo,
+			SourceLoc:      wd,
+			Chunks:         chunks,
 		}
 
-		res, err := dazzle.Build(cfg, wd, dfn, tag)
+		res, err := dazzle.Build(cfg)
 		logBuildResult(res)
-		testXMLOutput, _ := cmd.Flags().GetString("output-test-xml")
-		if testXMLOutput != "" {
-			serr := saveTestXMLOutput(res, testXMLOutput)
-			if serr != nil {
-				log.WithError(serr).Error("cannot save test result")
-			}
-		}
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -107,10 +104,9 @@ var buildCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(buildCmd)
 
-	buildCmd.Flags().StringP("file", "f", "Dockerfile", "name of the Dockerfile")
-	buildCmd.Flags().StringP("tag", "t", "dazzle-built:latest", "tag of the resulting image")
+	buildCmd.Flags().BoolP("all", "a", false, "build all chunks")
+	buildCmd.Flags().StringP("chunk", "c", "", "build a specific chunk")
 	buildCmd.Flags().StringP("repository", "r", "dazzle-work", "name of the Docker repository to work in (e.g. eu.gcr.io/someprj/dazzle-work)")
-	buildCmd.Flags().String("output-test-xml", "", "save the test results as JUnit XML file")
 }
 
 func logBuildResult(res *dazzle.BuildResult) {
@@ -123,36 +119,4 @@ func logBuildResult(res *dazzle.BuildResult) {
 	for _, l := range res.Layers {
 		log.WithField("size", l.Size).WithField("ref", l.Ref).Debugf("  layer %s", l.LayerName)
 	}
-}
-
-func saveTestXMLOutput(res *dazzle.BuildResult, fn string) error {
-	if res == nil {
-		return nil
-	}
-
-	var r test.Results
-	for _, l := range res.Layers {
-		ltr := l.TestResult
-		if ltr == nil {
-			continue
-		}
-
-		for _, tr := range ltr.Result {
-			ttr := *tr
-			ttr.Desc = fmt.Sprintf("%s: %s", l.LayerName, tr.Desc)
-			r.Result = append(r.Result, &ttr)
-		}
-	}
-
-	fc, err := xml.Marshal(r)
-	if err != nil {
-		return err
-	}
-
-	err = ioutil.WriteFile(fn, fc, 0644)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }

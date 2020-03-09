@@ -1,9 +1,0 @@
-- desc: "it should run Go"
-  command: ["go"]
-  assert:
-  - "status == 2"
-  - stderr.indexOf("Go is a tool") != -1
-- desc: "it should have Go in version 1.13"
-  command: ["go", "version"]
-  assert:
-  - stdout.indexOf("go1.11") != -1

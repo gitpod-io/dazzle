@@ -1,0 +1,16 @@
+tag: "{{ .Version }}"
+variants:
+  version:
+  - "1.12"
+  - "1.13"
+  - "1.14"
+tests:
+- desc: "it should run Go"
+  command: ["go"]
+  assert:
+  - "status == 2"
+  - stderr.indexOf("Go is a tool") != -1
+- desc: "it should have Go in version {{ .Version }}"
+  command: ["go", "version"]
+  assert:
+  - stdout.indexOf("{{ .Version }}") != -1

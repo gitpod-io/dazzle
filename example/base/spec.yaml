@@ -1,3 +1,4 @@
+tests:
 - desc: "it should demonstrate tests"
   command: ["echo", "hello world"]
   assert:
