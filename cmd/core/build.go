@@ -21,138 +21,44 @@
 package core
 
 import (
-	"encoding/xml"
-	"fmt"
-	"io/ioutil"
-	"os"
+	"context"
 
-	"github.com/32leaves/dazzle/pkg/dazzle"
-	"github.com/32leaves/dazzle/pkg/fancylog"
-	"github.com/32leaves/dazzle/pkg/test"
+	"github.com/csweichel/dazzle/pkg/dazzle"
+	"github.com/csweichel/dazzle/pkg/fancylog"
+	"github.com/moby/buildkit/client"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 // buildCmd represents the build command
 var buildCmd = &cobra.Command{
-	Use:   "build [context]",
+	Use:   "build <target-ref> <context>",
 	Short: "Builds a Docker image with independent layers",
-	Args:  cobra.MaximumNArgs(1),
+	Args:  cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		formatter := &fancylog.Formatter{}
 		log.SetFormatter(formatter)
 
-		var wd string
-		if len(args) > 0 {
-			wd = args[0]
-
-			if stat, err := os.Stat(wd); os.IsNotExist(err) || !stat.IsDir() {
-				return fmt.Errorf("context %s must be a directory", wd)
-			}
-		} else {
-			var err error
-			wd, err = os.Getwd()
-			if err != nil {
-				return err
-			}
-		}
-
-		dfn, err := cmd.Flags().GetString("file")
+		var (
+			targetref = args[0]
+			wd        = args[1]
+		)
+		prj, err := dazzle.LoadFromDir(wd)
 		if err != nil {
 			return err
 		}
-		tag, err := cmd.Flags().GetString("tag")
+
+		sckt, _ := cmd.Flags().GetString("addr")
+		cl, err := client.New(context.Background(), sckt, client.WithFailFast())
 		if err != nil {
 			return err
 		}
-		repo, err := cmd.Flags().GetString("repository")
-		if err != nil {
-			return err
-		}
-		repoChanged := cmd.Flags().Changed("repository")
-		if !repoChanged {
-			log.Warn("Using dazzle without --repository will likely produce incorrect results!")
-		}
-
-		env, err := dazzle.NewEnvironment()
-		if err != nil {
-			log.Fatal(err)
-		}
-		env.Formatter = formatter
-
-		log.WithField("version", version).Debug("this is dazzle")
-
-		cfg := dazzle.BuildConfig{
-			Env:            env,
-			BuildImageRepo: repo,
-		}
-
-		res, err := dazzle.Build(cfg, wd, dfn, tag)
-		logBuildResult(res)
-		testXMLOutput, _ := cmd.Flags().GetString("output-test-xml")
-		if testXMLOutput != "" {
-			serr := saveTestXMLOutput(res, testXMLOutput)
-			if serr != nil {
-				log.WithError(serr).Error("cannot save test result")
-			}
-		}
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		return nil
+		return prj.Build(context.Background(), cl, targetref)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(buildCmd)
 
-	buildCmd.Flags().StringP("file", "f", "Dockerfile", "name of the Dockerfile")
-	buildCmd.Flags().StringP("tag", "t", "dazzle-built:latest", "tag of the resulting image")
-	buildCmd.Flags().StringP("repository", "r", "dazzle-work", "name of the Docker repository to work in (e.g. eu.gcr.io/someprj/dazzle-work)")
-	buildCmd.Flags().String("output-test-xml", "", "save the test results as JUnit XML file")
-}
-
-func logBuildResult(res *dazzle.BuildResult) {
-	if res == nil {
-		return
-	}
-
-	log.Info("build done")
-	log.WithField("size", res.BaseImage.Size).Debugf("base layer: %s", res.BaseImage.Ref)
-	for _, l := range res.Layers {
-		log.WithField("size", l.Size).WithField("ref", l.Ref).Debugf("  layer %s", l.LayerName)
-	}
-}
-
-func saveTestXMLOutput(res *dazzle.BuildResult, fn string) error {
-	if res == nil {
-		return nil
-	}
-
-	var r test.Results
-	for _, l := range res.Layers {
-		ltr := l.TestResult
-		if ltr == nil {
-			continue
-		}
-
-		for _, tr := range ltr.Result {
-			ttr := *tr
-			ttr.Desc = fmt.Sprintf("%s: %s", l.LayerName, tr.Desc)
-			r.Result = append(r.Result, &ttr)
-		}
-	}
-
-	fc, err := xml.Marshal(r)
-	if err != nil {
-		return err
-	}
-
-	err = ioutil.WriteFile(fn, fc, 0644)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	buildCmd.Flags().String("addr", "unix:///run/buildkit/buildkitd.sock", "address of buildkitd")
 }

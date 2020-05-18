@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/32leaves/dazzle/pkg/test"
+	"github.com/csweichel/dazzle/pkg/test"
 	"github.com/alecthomas/jsonschema"
 )
 

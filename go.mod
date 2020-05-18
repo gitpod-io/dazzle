@@ -1,37 +1,31 @@
-module github.com/32leaves/dazzle
+module github.com/csweichel/dazzle
 
-go 1.12
+go 1.14
 
 require (
-	github.com/Microsoft/go-winio v0.4.14 // indirect
-	github.com/alecthomas/jsonschema v0.0.0-20191017121752-4bb6e3fae4f2
-	github.com/alecthomas/repr v0.0.0-20181024024818-d37bc2a10ba1
-	github.com/buildpack/imgutil v0.0.0-20191010153712-78959154ded1
-	github.com/creack/pty v1.1.9
-	github.com/docker/cli v0.0.0-20190321234815-f40f9c240ab0
-	github.com/docker/distribution v2.7.1+incompatible
-	github.com/docker/docker v1.14.0-0.20190319215453-e7b5f7dbe98c
-	github.com/docker/go-units v0.4.0 // indirect
-	github.com/dsnet/compress v0.0.1 // indirect
-	github.com/frankban/quicktest v1.5.0 // indirect
-	github.com/golang/snappy v0.0.1 // indirect
-	github.com/google/go-containerregistry v0.0.0-20190503220729-1c6c7f61e8a5
-	github.com/gookit/color v1.2.0
-	github.com/gorilla/mux v1.7.3 // indirect
-	github.com/manifoldco/promptui v0.3.2
-	github.com/mholt/archiver v3.1.1+incompatible
-	github.com/mitchellh/go-homedir v1.1.0
-	github.com/moby/buildkit v0.6.1
-	github.com/nwaples/rardecode v1.0.0 // indirect
-	github.com/pierrec/lz4 v2.3.0+incompatible // indirect
-	github.com/robertkrimen/otto v0.0.0-20180617131154-15f95af6e78d
-	github.com/segmentio/textio v1.2.0
-	github.com/sirupsen/logrus v1.4.1
-	github.com/spf13/cobra v0.0.5
-	github.com/stretchr/testify v1.4.0 // indirect
-	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
-	golang.org/x/net v0.0.0-20190926025831-c00fd9afed17 // indirect
-	golang.org/x/sys v0.0.0-20191008105621-543471e840be // indirect
+	github.com/alecthomas/repr v0.0.0-20200325044227-4184120f674c
+	github.com/bmatcuk/doublestar v1.3.0
+	github.com/containerd/console v0.0.0-20191219165238-8375c3424e4d
+	github.com/containerd/containerd v1.4.0-0
+	github.com/creack/pty v1.1.10
+	github.com/docker/distribution v0.0.0-20200223014041-6b972e50feee
+	github.com/gookit/color v1.2.5
+	github.com/manifoldco/promptui v0.7.0
+	github.com/minio/highwayhash v1.0.0
+	github.com/moby/buildkit v0.7.1
+	github.com/opencontainers/go-digest v1.0.0-rc1
+	github.com/opencontainers/image-spec v1.0.1
+	github.com/robertkrimen/otto v0.0.0-20191219234010-c382bd3c16ff
+	github.com/sirupsen/logrus v1.6.0
+	github.com/spf13/cobra v1.0.0
+	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 	gopkg.in/sourcemap.v1 v1.0.5 // indirect
-	gopkg.in/yaml.v2 v2.2.2
+	gopkg.in/yaml.v2 v2.3.0
+)
+
+replace (
+	github.com/containerd/containerd => github.com/containerd/containerd v1.3.1-0.20200512144102-f13ba8f2f2fd
+	github.com/docker/docker => github.com/docker/docker v17.12.0-ce-rc1.0.20200310163718-4634ce647cf2+incompatible
+	github.com/hashicorp/go-immutable-radix => github.com/tonistiigi/go-immutable-radix v0.0.0-20170803185627-826af9ccf0fe
+	github.com/jaguilar/vt100 => github.com/tonistiigi/vt100 v0.0.0-20190402012908-ad4c4a574305
 )

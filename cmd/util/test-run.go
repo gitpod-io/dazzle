@@ -30,8 +30,8 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 
-	"github.com/32leaves/dazzle/pkg/fancylog"
-	"github.com/32leaves/dazzle/pkg/test"
+	"github.com/csweichel/dazzle/pkg/fancylog"
+	"github.com/csweichel/dazzle/pkg/test"
 )
 
 var testRunCmd = &cobra.Command{
