@@ -22,7 +22,7 @@
 
 package main
 
-import cmd "github.com/32leaves/dazzle/cmd/core"
+import cmd "github.com/csweichel/dazzle/cmd/core"
 
 func main() {
 	cmd.Execute()

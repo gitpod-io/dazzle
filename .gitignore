@@ -20,3 +20,4 @@ example/dazzle__*.Dockerfile
 # dive log
 dive.logdazzle
 dazzle
+!pkg/dazzle
