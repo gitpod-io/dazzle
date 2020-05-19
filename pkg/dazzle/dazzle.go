@@ -47,7 +47,7 @@ type ProjectChunk struct {
 	Name        string
 	Dockerfile  []byte
 	ContextPath string
-	Tests       []test.Spec
+	Tests       []*test.Spec
 }
 
 // LoadFromDir loads a dazzle project from disk
@@ -107,6 +107,7 @@ func loadChunkFromDir(dir string) (*ProjectChunk, error) {
 type buildOpts struct {
 	CacheRef    reference.Named
 	NoCache     bool
+	NoTests     bool
 	Resolver    remotes.Resolver
 	PlainOutput bool
 }
@@ -145,6 +146,14 @@ func WithPlainOutput(enable bool) BuildOpt {
 
 // WithNoCache disables the buildkit build cache
 func WithNoCache(enable bool) BuildOpt {
+	return func(b *buildOpts) error {
+		b.NoCache = enable
+		return nil
+	}
+}
+
+// WithNoTests disables the build-time tests
+func WithNoTests(enable bool) BuildOpt {
 	return func(b *buildOpts) error {
 		b.NoCache = enable
 		return nil
@@ -207,6 +216,17 @@ func (p *Project) Build(ctx context.Context, cl *client.Client, targetRef string
 		if err != nil {
 			return err
 		}
+
+		if len(chk.Tests) == 0 {
+			continue
+		}
+		if opts.NoTests {
+			log.WithField("chunk", chk.Name).Warn("Skipping chunk tests (no-tests)")
+			continue
+		}
+		log.WithField("chunk", chk.Name).Warn("Running chunk tests")
+		executor := test.NewBuildkitExecutor(cl, chkref.String())
+		test.RunTests(ctx, executor, chk.Tests)
 	}
 
 	return nil
@@ -277,7 +297,7 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 		return
 	}
 
-	log.WithField("dest", dest.String()).Info("pushing config")
+	log.WithField("step", 0).WithField("dest", dest.String()).Info("pushing config")
 	cfgw, err := pusher.Push(ctx, chkmf.Config)
 	if errdefs.IsAlreadyExists(err) {
 		// nothing to do
@@ -291,9 +311,9 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 		}
 	}
 
-	log.WithField("dest", dest.String()).Info("pushing layers")
-	for _, l := range chkmf.Layers {
-		log.WithField("layer", l.Digest).Info("copying layer")
+	log.WithField("step", 1).WithField("dest", dest.String()).Info("pushing layers")
+	for i, l := range chkmf.Layers {
+		log.WithField("layer", l.Digest).WithField("step", 2+i).Info("copying layer")
 		// this is just needed if the chunk and dest are not in the same repo
 		err = copyLayer(ctx, fetcher, pusher, l)
 		if err != nil {
@@ -301,7 +321,7 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 		}
 	}
 
-	log.WithField("dest", dest.String()).Info("pushing manifest")
+	log.WithField("step", 3+len(chkmf.Layers)).WithField("dest", dest.String()).Info("pushing manifest")
 	mfw, err := pusher.Push(ctx, mfdesc)
 	if errdefs.IsAlreadyExists(err) {
 		// nothiong to do
