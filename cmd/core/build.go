@@ -22,9 +22,12 @@ package core
 
 import (
 	"context"
+	"os"
 
+	"github.com/containerd/containerd/remotes/docker"
 	"github.com/csweichel/dazzle/pkg/dazzle"
 	"github.com/csweichel/dazzle/pkg/fancylog"
+	"github.com/docker/cli/cli/config"
 	"github.com/moby/buildkit/client"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -38,6 +41,12 @@ var buildCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		formatter := &fancylog.Formatter{}
 		log.SetFormatter(formatter)
+		log.SetLevel(log.InfoLevel)
+		if v, _ := cmd.Flags().GetBool("verbose"); v {
+			log.SetLevel(log.DebugLevel)
+		}
+
+		nocache, _ := cmd.Flags().GetBool("no-cache")
 
 		var (
 			targetref = args[0]
@@ -48,12 +57,38 @@ var buildCmd = &cobra.Command{
 			return err
 		}
 
+		dockerCfg := config.LoadDefaultConfigFile(os.Stderr)
+
+		resolver := docker.NewResolver(docker.ResolverOptions{
+			Authorizer: docker.NewDockerAuthorizer(docker.WithAuthCreds(func(host string) (user, pwd string, err error) {
+				if dockerCfg == nil {
+					return
+				}
+
+				if host == "registry-1.docker.io" {
+					host = "https://index.docker.io/v1/"
+				}
+				ac, err := dockerCfg.GetAuthConfig(host)
+				if err != nil {
+					return
+				}
+				if ac.IdentityToken != "" {
+					pwd = ac.IdentityToken
+				} else {
+					user = ac.Username
+					pwd = ac.Password
+				}
+				log.WithField("host", host).Info("authenticating user")
+				return
+			})),
+		})
+
 		sckt, _ := cmd.Flags().GetString("addr")
 		cl, err := client.New(context.Background(), sckt, client.WithFailFast())
 		if err != nil {
 			return err
 		}
-		return prj.Build(context.Background(), cl, targetref)
+		return prj.Build(context.Background(), cl, targetref, dazzle.WithResolver(resolver), dazzle.WithNoCache(nocache))
 	},
 }
 
@@ -61,4 +96,6 @@ func init() {
 	rootCmd.AddCommand(buildCmd)
 
 	buildCmd.Flags().String("addr", "unix:///run/buildkit/buildkitd.sock", "address of buildkitd")
+	buildCmd.Flags().BoolP("verbose", "v", false, "enable verbose logging")
+	buildCmd.Flags().Bool("no-cache", false, "disables the buildkit build cache")
 }
