@@ -170,7 +170,7 @@ func (p *Project) Build(ctx context.Context, cl *client.Client, targetRef string
 
 	// Relying on the buildkit cache alone does not result in fixed content hashes.
 	// We must locally build hashes and use them as unique image names.
-	baseref, err := reference.WithTag(target, "base")
+	baseref, err := p.BaseRef(target)
 	if err != nil {
 		return err
 	}
@@ -190,7 +190,7 @@ func (p *Project) Build(ctx context.Context, cl *client.Client, targetRef string
 	}
 
 	for _, chk := range p.Chunks {
-		chkname, err := reference.WithTag(target, chk.Name)
+		chkname, err := p.ChunkRef(target, chk.Name)
 		if err != nil {
 			return err
 		}
@@ -239,10 +239,12 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 		}
 	}
 
+	n := len(basecfg.RootFS.DiffIDs)
 	chkcfg.RootFS = ociv1.RootFS{
 		Type:    chkcfg.RootFS.Type,
-		DiffIDs: chkcfg.RootFS.DiffIDs[len(basecfg.RootFS.DiffIDs):],
+		DiffIDs: chkcfg.RootFS.DiffIDs[n:],
 	}
+	chkcfg.History = chkcfg.History[n:]
 	ncfg, err := json.Marshal(chkcfg)
 	if err != nil {
 		return
@@ -398,7 +400,7 @@ func (p *ProjectChunk) getLLB(ctx context.Context, base reference.Reference, res
 	return
 }
 
-func (p *ProjectChunk) hash() (res string, err error) {
+func (p *ProjectChunk) hash(baseref string) (res string, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("cannot compute hash: %w", err)
@@ -410,7 +412,7 @@ func (p *ProjectChunk) hash() (res string, err error) {
 		return
 	}
 
-	err = p.manifest(hash)
+	err = p.manifest(baseref, hash)
 	if err != nil {
 		return
 	}
@@ -419,7 +421,7 @@ func (p *ProjectChunk) hash() (res string, err error) {
 	return
 }
 
-func (p *ProjectChunk) manifest(out io.Writer) (err error) {
+func (p *ProjectChunk) manifest(baseref string, out io.Writer) (err error) {
 	sources, err := doublestar.Glob(filepath.Join(p.ContextPath, "**/*"))
 	if err != nil {
 		return
@@ -458,28 +460,35 @@ func (p *ProjectChunk) manifest(out io.Writer) (err error) {
 		res = append(res, fmt.Sprintf("%s:%s", strings.TrimPrefix(src, p.ContextPath), hex.EncodeToString(hash.Sum(nil))))
 	}
 
+	if baseref != "" {
+		fmt.Fprintf(out, "Baseref: %s\n", baseref)
+	}
 	fmt.Fprintf(out, "Dockerfile: %s\n", string(p.Dockerfile))
 	fmt.Fprintf(out, "Sources:\n%s\n", strings.Join(res, "\n"))
 	return nil
 }
 
-func (p *ProjectChunk) buildAsBase(ctx context.Context, cl *client.Client, dst reference.Named, opts buildOpts) (absref reference.Digested, err error) {
+// BaseRef returns the ref of the base image of a project
+func (p *Project) BaseRef(build reference.Named) (reference.NamedTagged, error) {
+	hash, err := p.Base.hash("")
+	if err != nil {
+		return nil, err
+	}
+	return reference.WithTag(build, fmt.Sprintf("base--%s", hash))
+}
+
+// ChunkRef returns the ref of a chunk image
+func (p *Project) ChunkRef(build reference.Named, chunk string) (reference.NamedTagged, error) {
+	return reference.WithTag(build, chunk)
+}
+
+func (p *ProjectChunk) buildAsBase(ctx context.Context, cl *client.Client, dest reference.Named, opts buildOpts) (absref reference.Digested, err error) {
 	defs, err := p.getLLB(ctx, nil, opts.Resolver)
 	if err != nil {
 		return
 	}
 
 	def, err := defs.Marshal()
-	if err != nil {
-		return
-	}
-
-	hash, err := p.hash()
-	if err != nil {
-		return
-	}
-
-	dest, err := reference.WithTag(dst, fmt.Sprintf("base-%s", hash))
 	if err != nil {
 		return
 	}
@@ -575,7 +584,7 @@ func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base refere
 		return
 	}
 
-	hash, err := p.hash()
+	hash, err := p.hash(base.String())
 	if err != nil {
 		return
 	}
