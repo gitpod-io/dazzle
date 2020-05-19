@@ -8,6 +8,7 @@ require (
 	github.com/containerd/console v0.0.0-20191219165238-8375c3424e4d
 	github.com/containerd/containerd v1.4.0-0
 	github.com/creack/pty v1.1.10
+	github.com/docker/cli v0.0.0-20200227165822-2298e6a3fe24
 	github.com/docker/distribution v0.0.0-20200223014041-6b972e50feee
 	github.com/gookit/color v1.2.5
 	github.com/manifoldco/promptui v0.7.0
@@ -15,6 +16,7 @@ require (
 	github.com/moby/buildkit v0.7.1
 	github.com/opencontainers/go-digest v1.0.0-rc1
 	github.com/opencontainers/image-spec v1.0.1
+	github.com/pkg/errors v0.9.1
 	github.com/robertkrimen/otto v0.0.0-20191219234010-c382bd3c16ff
 	github.com/sirupsen/logrus v1.6.0
 	github.com/spf13/cobra v1.0.0

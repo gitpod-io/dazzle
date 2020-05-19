@@ -13,6 +13,7 @@ import (
 
 	"github.com/bmatcuk/doublestar"
 	"github.com/containerd/console"
+	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/csweichel/dazzle/pkg/test"
@@ -105,6 +106,7 @@ func loadChunkFromDir(dir string) (*ProjectChunk, error) {
 
 type buildOpts struct {
 	CacheRef    reference.Named
+	NoCache     bool
 	Resolver    remotes.Resolver
 	PlainOutput bool
 }
@@ -137,6 +139,14 @@ func WithResolver(r remotes.Resolver) BuildOpt {
 func WithPlainOutput(enable bool) BuildOpt {
 	return func(b *buildOpts) error {
 		b.PlainOutput = enable
+		return nil
+	}
+}
+
+// WithNoCache disables the buildkit build cache
+func WithNoCache(enable bool) BuildOpt {
+	return func(b *buildOpts) error {
+		b.NoCache = enable
 		return nil
 	}
 }
@@ -174,41 +184,206 @@ func (p *Project) Build(ctx context.Context, cl *client.Client, targetRef string
 		return fmt.Errorf("cannot build base image: %w", err)
 	}
 
-	_, basedesc, err := opts.Resolver.Resolve(ctx, absbaseref.String())
+	basemf, basecfg, err := getImageMetadata(ctx, absbaseref, opts.Resolver)
 	if err != nil {
-		return fmt.Errorf("cannot fetch base desc: %w", err)
-	}
-	basefetcher, err := opts.Resolver.Fetcher(ctx, absbaseref.String())
-	if err != nil {
-		return fmt.Errorf("cannot fetch base desc: %w", err)
-	}
-	basemanr, err := basefetcher.Fetch(ctx, basedesc)
-	if err != nil {
-		return fmt.Errorf("cannot fetch base desc: %w", err)
-	}
-	baseman, err := ioutil.ReadAll(basemanr)
-	basemanr.Close()
-	if err != nil {
-		return fmt.Errorf("cannot fetch base desc: %w", err)
-	}
-	var spec ociv1.Image
-	err = json.Unmarshal(baseman, &spec)
-	if err != nil {
-		return fmt.Errorf("cannot fetch base desc: %w", err)
+		return fmt.Errorf("cannot fetch base image: %w", err)
 	}
 
 	for _, chk := range p.Chunks {
+		chkname, err := reference.WithTag(target, chk.Name)
+		if err != nil {
+			return err
+		}
+
 		// TODO: record built image name and run tests
 		log.WithField("chunk", chk.Name).Warn("building chunk")
-		_, err = chk.build(ctx, cl, absbaseref, target, opts)
+		chkref, err := chk.build(ctx, cl, absbaseref, target, opts)
 		if err != nil {
 			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
 		}
 
-		//
+		log.WithField("chunk", chk.Name).Warn("building chunk without base")
+		err = removeBaseLayer(ctx, opts.Resolver, basemf, basecfg, chkref, chkname)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *ociv1.Manifest, basecfg *ociv1.Image, chunkref reference.Reference, dest reference.NamedTagged) (err error) {
+	chkmf, chkcfg, err := getImageMetadata(ctx, chunkref, resolver)
+	if err != nil {
+		return
+	}
+
+	for i := range basemf.Layers {
+		if len(chkmf.Layers) < i {
+			return fmt.Errorf("chunk was not built from base image (too few layers)")
+		}
+		if len(chkcfg.RootFS.DiffIDs) < i {
+			return fmt.Errorf("chunk was not built from base image (too few diffIDs)")
+		}
+		var (
+			bl = basemf.Layers[i]
+			bd = basecfg.RootFS.DiffIDs[i]
+			cl = chkmf.Layers[i]
+			cd = chkcfg.RootFS.DiffIDs[i]
+		)
+		if bl.Digest.String() != cl.Digest.String() {
+			return fmt.Errorf("chunk was not built from base image: digest mistmatch on layer %d: base %s != chunk %s", i, bl.Digest.String(), cl.Digest.String())
+		}
+		if bd.String() != cd.String() {
+			return fmt.Errorf("chunk was not built from base image: digest mistmatch on diffID %d: base %s != chunk %s", i, bd.String(), cd.String())
+		}
+	}
+
+	chkcfg.RootFS = ociv1.RootFS{
+		Type:    chkcfg.RootFS.Type,
+		DiffIDs: chkcfg.RootFS.DiffIDs[len(basecfg.RootFS.DiffIDs):],
+	}
+	ncfg, err := json.Marshal(chkcfg)
+	if err != nil {
+		return
+	}
+
+	chkmf.Config = ociv1.Descriptor{
+		MediaType: chkmf.Config.MediaType,
+		Digest:    digest.FromBytes(ncfg),
+		Platform:  chkmf.Config.Platform,
+		Size:      int64(len(ncfg)),
+	}
+	chkmf.Layers = chkmf.Layers[len(basemf.Layers):]
+	nmf, err := json.Marshal(chkmf)
+	if err != nil {
+		return
+	}
+	mfdesc := ociv1.Descriptor{
+		MediaType: ociv1.MediaTypeImageManifest,
+		Platform:  chkmf.Config.Platform,
+		Digest:    digest.FromBytes(nmf),
+		Size:      int64(len(nmf)),
+	}
+
+	pusher, err := resolver.Pusher(ctx, dest.String())
+	if err != nil {
+		return
+	}
+	fetcher, err := resolver.Fetcher(ctx, chunkref.String())
+	if err != nil {
+		return
+	}
+
+	log.WithField("dest", dest.String()).Info("pushing config")
+	cfgw, err := pusher.Push(ctx, chkmf.Config)
+	if errdefs.IsAlreadyExists(err) {
+		// nothing to do
+	} else if err != nil {
+		return fmt.Errorf("cannot push image config: %w", err)
+	} else {
+		cfgw.Write(ncfg)
+		err = cfgw.Commit(ctx, chkmf.Config.Size, chkmf.Config.Digest)
+		if err != nil && !errdefs.IsAlreadyExists(err) {
+			return fmt.Errorf("cannot push image config: %w", err)
+		}
+	}
+
+	log.WithField("dest", dest.String()).Info("pushing layers")
+	for _, l := range chkmf.Layers {
+		log.WithField("layer", l.Digest).Info("copying layer")
+		// this is just needed if the chunk and dest are not in the same repo
+		err = copyLayer(ctx, fetcher, pusher, l)
+		if err != nil {
+			return
+		}
+	}
+
+	log.WithField("dest", dest.String()).Info("pushing manifest")
+	mfw, err := pusher.Push(ctx, mfdesc)
+	if errdefs.IsAlreadyExists(err) {
+		// nothiong to do
+	} else if err != nil {
+		return fmt.Errorf("cannot push image manifest: %w", err)
+	} else {
+		mfw.Write(nmf)
+		err = mfw.Commit(ctx, mfdesc.Size, mfdesc.Digest)
+		if err != nil && !errdefs.IsAlreadyExists(err) {
+			return fmt.Errorf("cannot push image: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func copyLayer(ctx context.Context, fetcher remotes.Fetcher, pusher remotes.Pusher, desc ociv1.Descriptor) (err error) {
+	rc, err := fetcher.Fetch(ctx, desc)
+	if err != nil {
+		return
+	}
+	defer rc.Close()
+
+	w, err := pusher.Push(ctx, desc)
+	if errdefs.IsAlreadyExists(err) {
+		return nil
+	}
+	if err != nil {
+		return
+	}
+	defer w.Close()
+
+	_, err = io.Copy(w, rc)
+	if err != nil {
+		return
+	}
+
+	return w.Commit(ctx, desc.Size, desc.Digest)
+}
+
+func getImageMetadata(ctx context.Context, ref reference.Reference, resolver remotes.Resolver) (manifest *ociv1.Manifest, config *ociv1.Image, err error) {
+	_, desc, err := resolver.Resolve(ctx, ref.String())
+	if err != nil {
+		return
+	}
+	fetcher, err := resolver.Fetcher(ctx, ref.String())
+	if err != nil {
+		return
+	}
+
+	// TODO: deal with this when the ref points to an image list rater than the image
+	manifestr, err := fetcher.Fetch(ctx, desc)
+	if err != nil {
+		return
+	}
+	defer manifestr.Close()
+	manifestraw, err := ioutil.ReadAll(manifestr)
+	if err != nil {
+		return
+	}
+	var mf ociv1.Manifest
+	err = json.Unmarshal(manifestraw, &mf)
+	if err != nil {
+		return
+	}
+
+	cfgr, err := fetcher.Fetch(ctx, mf.Config)
+	if err != nil {
+		return
+	}
+	defer cfgr.Close()
+	cfgraw, err := ioutil.ReadAll(cfgr)
+	if err != nil {
+		return
+	}
+	var cfg ociv1.Image
+	err = json.Unmarshal(cfgraw, &cfg)
+	if err != nil {
+		return
+	}
+
+	manifest = &mf
+	config = &cfg
+	return
 }
 
 func (p *ProjectChunk) getLLB(ctx context.Context, base reference.Reference, resolver remotes.Resolver) (state *llb.State, err error) {
@@ -389,7 +564,7 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, cl *client.Client, dst r
 	return resref, nil
 }
 
-func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base reference.Digested, dst reference.Named, opts buildOpts) (absref string, err error) {
+func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base reference.Digested, dst reference.Named, opts buildOpts) (absref reference.Reference, err error) {
 	defs, err := p.getLLB(ctx, base, opts.Resolver)
 	if err != nil {
 		return
@@ -405,14 +580,15 @@ func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base refere
 		return
 	}
 
-	dest, err := reference.WithTag(dst, fmt.Sprintf("%s-%s", p.Name, hash))
+	dest, err := reference.WithTag(dst, fmt.Sprintf("%s--%s", p.Name, hash))
 	if err != nil {
 		return
 	}
 
-	absref, _, err = opts.Resolver.Resolve(ctx, dest.String())
+	resrefstr, _, err := opts.Resolver.Resolve(ctx, dest.String())
 	if err == nil {
 		// err == nil means the image exists already
+		absref, err = reference.Parse(resrefstr)
 		return
 	}
 
@@ -420,35 +596,39 @@ func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base refere
 	if err != nil {
 		return
 	}
-	// chunkTgt, err := reference.WithTag(dst, p.Name)
-	// if err != nil {
-	// 	return
-	// }
 
 	eg, ctx := errgroup.WithContext(ctx)
 	ch := make(chan *client.SolveStatus)
 
 	var (
-		cacheImport = client.CacheOptionsEntry{
-			Type: "registry",
-			Attrs: map[string]string{
-				"ref": cacheTgt.String(),
+		cacheImports = []client.CacheOptionsEntry{
+			{
+				Type: "registry",
+				Attrs: map[string]string{
+					"ref": cacheTgt.String(),
+				},
 			},
 		}
-		cacheExport = client.CacheOptionsEntry{
-			Type: "registry",
-			Attrs: map[string]string{
-				"ref": cacheTgt.String(),
+		cacheExports = []client.CacheOptionsEntry{
+			{
+				Type: "registry",
+				Attrs: map[string]string{
+					"ref": cacheTgt.String(),
+				},
 			},
 		}
 	)
+	if opts.NoCache {
+		cacheImports = []client.CacheOptionsEntry{}
+		cacheExports = []client.CacheOptionsEntry{}
+	}
 
 	// TODO: export locally and subtract base image
 	rchan := make(chan map[string]string, 1)
 	eg.Go(func() error {
 		resp, err := cl.Solve(ctx, def, client.SolveOpt{
-			CacheImports: []client.CacheOptionsEntry{cacheImport},
-			CacheExports: []client.CacheOptionsEntry{cacheExport},
+			CacheImports: cacheImports,
+			CacheExports: cacheExports,
 			Session: []session.Attachable{
 				authprovider.NewDockerAuthProvider(os.Stderr),
 			},
@@ -500,5 +680,5 @@ func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base refere
 		return
 	}
 
-	return resref.String(), nil
+	return resref, nil
 }
