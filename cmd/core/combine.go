@@ -1,4 +1,4 @@
-// Copyright © 2019 Christian Weichel
+// Copyright © 2020 Christian Weichel
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,19 +22,20 @@ package core
 
 import (
 	"context"
+	"os"
 
 	"github.com/csweichel/dazzle/pkg/dazzle"
 	"github.com/csweichel/dazzle/pkg/fancylog"
-	"github.com/moby/buildkit/client"
+	"github.com/docker/distribution/reference"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
-// buildCmd represents the build command
-var buildCmd = &cobra.Command{
-	Use:   "build <target-ref> <context>",
-	Short: "Builds a Docker image with independent layers",
-	Args:  cobra.MinimumNArgs(2),
+// combineCmd represents the build command
+var combineCmd = &cobra.Command{
+	Use:   "combine <dest> <build-ref> <chunks>",
+	Short: "Combines previously built chunks into a single image",
+	Args:  cobra.MinimumNArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		formatter := &fancylog.Formatter{}
 		log.SetFormatter(formatter)
@@ -43,30 +44,34 @@ var buildCmd = &cobra.Command{
 			log.SetLevel(log.DebugLevel)
 		}
 
-		nocache, _ := cmd.Flags().GetBool("no-cache")
-
-		var (
-			targetref = args[0]
-			wd        = args[1]
-		)
-		prj, err := dazzle.LoadFromDir(wd)
+		ctxdir, _ := cmd.Flags().GetString("context")
+		prj, err := dazzle.LoadFromDir(ctxdir)
 		if err != nil {
 			return err
 		}
 
-		sckt, _ := cmd.Flags().GetString("addr")
-		cl, err := client.New(context.Background(), sckt, client.WithFailFast())
+		destref, err := reference.ParseNamed(args[0])
 		if err != nil {
-			return err
+			log.WithError(err).Fatal("cannot parse dest ref")
 		}
-		return prj.Build(context.Background(), cl, targetref, dazzle.WithResolver(getResolver()), dazzle.WithNoCache(nocache))
+		buildref, err := reference.ParseNamed(args[1])
+		if err != nil {
+			log.WithError(err).Fatal("cannot parse build ref")
+		}
+
+		return prj.Combine(context.Background(), args[2:], buildref, destref, getResolver())
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(buildCmd)
+	rootCmd.AddCommand(combineCmd)
 
-	buildCmd.Flags().String("addr", "unix:///run/buildkit/buildkitd.sock", "address of buildkitd")
-	buildCmd.Flags().BoolP("verbose", "v", false, "enable verbose logging")
-	buildCmd.Flags().Bool("no-cache", false, "disables the buildkit build cache")
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
+	combineCmd.Flags().BoolP("verbose", "v", false, "enable verbose logging")
+	combineCmd.Flags().Bool("no-cache", false, "disables the buildkit build cache")
+	combineCmd.Flags().String("context", wd, "context path")
 }

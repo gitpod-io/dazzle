@@ -24,7 +24,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/containerd/containerd/remotes"
+	"github.com/containerd/containerd/remotes/docker"
+	"github.com/docker/cli/cli/config"
 	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -48,4 +52,31 @@ func Execute() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+}
+
+func getResolver() remotes.Resolver {
+	dockerCfg := config.LoadDefaultConfigFile(os.Stderr)
+	return docker.NewResolver(docker.ResolverOptions{
+		Authorizer: docker.NewDockerAuthorizer(docker.WithAuthCreds(func(host string) (user, pwd string, err error) {
+			if dockerCfg == nil {
+				return
+			}
+
+			if host == "registry-1.docker.io" {
+				host = "https://index.docker.io/v1/"
+			}
+			ac, err := dockerCfg.GetAuthConfig(host)
+			if err != nil {
+				return
+			}
+			if ac.IdentityToken != "" {
+				pwd = ac.IdentityToken
+			} else {
+				user = ac.Username
+				pwd = ac.Password
+			}
+			log.WithField("host", host).Info("authenticating user")
+			return
+		})),
+	})
 }
