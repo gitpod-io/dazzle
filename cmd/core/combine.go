@@ -27,6 +27,7 @@ import (
 	"github.com/csweichel/dazzle/pkg/dazzle"
 	"github.com/csweichel/dazzle/pkg/fancylog"
 	"github.com/docker/distribution/reference"
+	"github.com/moby/buildkit/client"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -59,7 +60,18 @@ var combineCmd = &cobra.Command{
 			log.WithError(err).Fatal("cannot parse build ref")
 		}
 
-		return prj.Combine(context.Background(), args[2:], buildref, destref, getResolver())
+		var opts []dazzle.CombinerOpt
+		notest, _ := cmd.Flags().GetBool("no-test")
+		if !notest {
+			sckt, _ := cmd.Flags().GetString("addr")
+			cl, err := client.New(context.Background(), sckt, client.WithFailFast())
+			if err != nil {
+				return err
+			}
+			opts = append(opts, dazzle.WithTests(cl))
+		}
+
+		return prj.Combine(context.Background(), args[2:], buildref, destref, getResolver(), opts...)
 	},
 }
 
@@ -71,7 +83,8 @@ func init() {
 		panic(err)
 	}
 
+	combineCmd.Flags().String("addr", "unix:///run/buildkit/buildkitd.sock", "address of buildkitd")
 	combineCmd.Flags().BoolP("verbose", "v", false, "enable verbose logging")
-	combineCmd.Flags().Bool("no-cache", false, "disables the buildkit build cache")
+	combineCmd.Flags().Bool("no-test", false, "disables the tests")
 	combineCmd.Flags().String("context", wd, "context path")
 }

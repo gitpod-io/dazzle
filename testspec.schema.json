@@ -12,20 +12,20 @@
         "assert"
       ],
       "properties": {
-        "assert": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+        "desc": {
+          "type": "string"
+        },
+        "skip": {
+          "type": "boolean"
+        },
+        "user": {
+          "type": "string"
         },
         "command": {
           "items": {
             "type": "string"
           },
           "type": "array"
-        },
-        "desc": {
-          "type": "string"
         },
         "entrypoint": {
           "items": {
@@ -39,11 +39,11 @@
           },
           "type": "array"
         },
-        "skip": {
-          "type": "boolean"
-        },
-        "user": {
-          "type": "string"
+        "assert": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "additionalProperties": false,

@@ -3,6 +3,8 @@ module github.com/csweichel/dazzle
 go 1.14
 
 require (
+	github.com/GeertJohan/go.rice v1.0.0
+	github.com/alecthomas/jsonschema v0.0.0-20200514014646-0366d1034a17 // indirect
 	github.com/alecthomas/repr v0.0.0-20200325044227-4184120f674c
 	github.com/bmatcuk/doublestar v1.3.0
 	github.com/containerd/console v0.0.0-20191219165238-8375c3424e4d
@@ -16,7 +18,6 @@ require (
 	github.com/moby/buildkit v0.7.1
 	github.com/opencontainers/go-digest v1.0.0-rc1
 	github.com/opencontainers/image-spec v1.0.1
-	github.com/pkg/errors v0.9.1
 	github.com/robertkrimen/otto v0.0.0-20191219234010-c382bd3c16ff
 	github.com/sirupsen/logrus v1.6.0
 	github.com/spf13/cobra v1.0.0

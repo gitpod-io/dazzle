@@ -8,15 +8,64 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/remotes"
+	"github.com/csweichel/dazzle/pkg/test"
+	"github.com/csweichel/dazzle/pkg/test/buildkit"
 	"github.com/docker/distribution/reference"
+	"github.com/moby/buildkit/client"
 	"github.com/opencontainers/go-digest"
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
 	log "github.com/sirupsen/logrus"
 )
 
+type combinerOpts struct {
+	BuildkitClient *client.Client
+	RunTests       bool
+	TempBuild      bool
+}
+
+// CombinerOpt configrues the combiner
+type CombinerOpt func(*combinerOpts) error
+
+// WithTests enable tests after image combination
+func WithTests(cl *client.Client) CombinerOpt {
+	return func(o *combinerOpts) error {
+		o.BuildkitClient = cl
+		o.RunTests = true
+		return nil
+	}
+}
+
+func asTempBuild(o *combinerOpts) error {
+	o.TempBuild = true
+	return nil
+}
+
 // Combine combines a set of previously built chunks into a single image while maintaining
 // the layer identity.
-func (p *Project) Combine(ctx context.Context, chunks []string, build reference.Named, dest reference.Named, resolver remotes.Resolver) (err error) {
+func (p *Project) Combine(ctx context.Context, chunks []string, build reference.Named, dest reference.Named, resolver remotes.Resolver, opts ...CombinerOpt) (err error) {
+	var options combinerOpts
+	for _, o := range opts {
+		err = o(&options)
+		if err != nil {
+			return
+		}
+	}
+
+	if options.RunTests && !options.TempBuild {
+		// We have to push the combination result. To avoid overwriting the target but have the tests fail
+		// we combine and test with a temp name first, then do the real thing.
+		tmpdest, err := reference.WithTag(dest, fmt.Sprintf("temp%d", time.Now().Unix()))
+		if err != nil {
+			return err
+		}
+		err = p.Combine(ctx, chunks, build, tmpdest, resolver, append(opts, asTempBuild)...)
+		if err != nil {
+			return err
+		}
+
+		options.RunTests = false
+	}
+
 	cs := make([]ProjectChunk, len(chunks))
 	for i, cn := range chunks {
 		var found bool
@@ -149,6 +198,21 @@ func (p *Project) Combine(ctx context.Context, chunks []string, build reference.
 	err = mfw.Commit(ctx, int64(len(serializedMf)), cmfdesc.Digest)
 	if err != nil {
 		return err
+	}
+
+	if options.RunTests {
+		for _, chk := range cs {
+			if len(chk.Tests) == 0 {
+				continue
+			}
+
+			executor := buildkit.NewExecutor(options.BuildkitClient, dest.String())
+			_, ok := test.RunTests(ctx, executor, chk.Tests)
+			if !ok {
+				return fmt.Errorf("tests failed")
+			}
+		}
+
 	}
 
 	return

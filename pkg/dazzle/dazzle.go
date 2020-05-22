@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/csweichel/dazzle/pkg/test"
+	"github.com/csweichel/dazzle/pkg/test/buildkit"
 	"github.com/docker/distribution/reference"
 	"github.com/minio/highwayhash"
 	"github.com/moby/buildkit/client"
@@ -225,8 +226,11 @@ func (p *Project) Build(ctx context.Context, cl *client.Client, targetRef string
 			continue
 		}
 		log.WithField("chunk", chk.Name).Warn("Running chunk tests")
-		executor := test.NewBuildkitExecutor(cl, chkref.String())
-		test.RunTests(ctx, executor, chk.Tests)
+		executor := buildkit.NewExecutor(cl, chkref.String())
+		_, ok := test.RunTests(ctx, executor, chk.Tests)
+		if !ok {
+			return fmt.Errorf("tests failed")
+		}
 	}
 
 	return nil
