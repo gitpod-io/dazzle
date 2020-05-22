@@ -145,7 +145,12 @@ func (LocalExecutor) Run(ctx context.Context, s *Spec) (res *RunResult, err erro
 	}
 	err = cmd.Wait()
 	if err != nil {
-		return nil, err
+		if _, ok := err.(*exec.ExitError); ok {
+			// the command exited with non-zero exit code - that's no reason to fail here
+			err = nil
+		} else {
+			return nil, err
+		}
 	}
 
 	res = &RunResult{

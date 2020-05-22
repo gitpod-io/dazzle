@@ -21,3 +21,4 @@ example/dazzle__*.Dockerfile
 dive.logdazzle
 dazzle
 !pkg/dazzle
+pkged.go
