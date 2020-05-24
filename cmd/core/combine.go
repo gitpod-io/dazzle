@@ -33,7 +33,7 @@ import (
 
 // combineCmd represents the build command
 var combineCmd = &cobra.Command{
-	Use:   "combine <dest> <build-ref> <chunks>",
+	Use:   "combine <dest> <buildref> <chunks>",
 	Short: "Combines previously built chunks into a single image",
 	Args:  cobra.MinimumNArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -43,27 +43,34 @@ var combineCmd = &cobra.Command{
 			return err
 		}
 
-		destref, err := reference.ParseNamed(args[0])
+		dest, bldref, chksn := args[0], args[1], args[2:]
+
+		destref, err := reference.ParseNamed(dest)
 		if err != nil {
 			log.WithError(err).Fatal("cannot parse dest ref")
 		}
-		buildref, err := reference.ParseNamed(args[1])
-		if err != nil {
-			log.WithError(err).Fatal("cannot parse build ref")
-		}
 
 		var opts []dazzle.CombinerOpt
+		sckt, _ := cmd.Flags().GetString("addr")
+		cl, err := client.New(context.Background(), sckt, client.WithFailFast())
+		if err != nil {
+			return err
+		}
 		notest, _ := cmd.Flags().GetBool("no-test")
 		if !notest {
-			sckt, _ := cmd.Flags().GetString("addr")
-			cl, err := client.New(context.Background(), sckt, client.WithFailFast())
-			if err != nil {
-				return err
-			}
 			opts = append(opts, dazzle.WithTests(cl))
 		}
 
-		return prj.Combine(context.Background(), args[2:], buildref, destref, getResolver(), opts...)
+		sess, err := dazzle.NewSession(cl, bldref, dazzle.WithResolver(getResolver()))
+		if err != nil {
+			return err
+		}
+		err = sess.DownloadBaseInfo(context.Background(), prj)
+		if err != nil {
+			return err
+		}
+
+		return prj.Combine(context.Background(), chksn, destref, sess, opts...)
 	},
 }
 

@@ -57,6 +57,8 @@ type ProjectChunk struct {
 	Dockerfile  []byte
 	ContextPath string
 	Tests       []*test.Spec
+
+	cachedHash string
 }
 
 // LoadFromDir loads a dazzle project from disk
@@ -195,13 +197,47 @@ func WithNoTests(enable bool) BuildOpt {
 }
 
 // Build builds all images in a project
-func (p *Project) Build(ctx context.Context, cl *client.Client, targetRef string, options ...BuildOpt) error {
-	// disable verbose containerd resolver logging
+func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 	ctx = clog.WithLogger(ctx, log.NewEntry(log.New()))
 
-	target, err := reference.ParseNamed(targetRef)
+	// Relying on the buildkit cache alone does not result in fixed content hashes.
+	// We must locally build hashes and use them as unique image names.
+	baseref, err := p.BaseRef(session.Dest)
 	if err != nil {
 		return err
+	}
+	if session.opts.CacheRef == nil {
+		session.opts.CacheRef = baseref
+	}
+
+	log.WithField("ref", baseref.String()).Warn("building base iamge")
+	absbaseref, err := p.Base.buildAsBase(ctx, baseref, session)
+	if err != nil {
+		return fmt.Errorf("cannot build base image: %w", err)
+	}
+
+	_, basemf, basecfg, err := getImageMetadata(ctx, absbaseref, session.opts.Resolver)
+	if err != nil {
+		return fmt.Errorf("cannot fetch base image: %w", err)
+	}
+	session.baseBuildFinished(absbaseref, basemf, basecfg)
+
+	for _, chk := range p.Chunks {
+		_, _, err := chk.build(ctx, session)
+		if err != nil {
+			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// NewSession starts a new build session
+func NewSession(cl *client.Client, targetRef string, options ...BuildOpt) (*BuildSession, error) {
+	// disable verbose containerd resolver logging
+	target, err := reference.ParseNamed(targetRef)
+	if err != nil {
+		return nil, err
 	}
 
 	opts := buildOpts{
@@ -210,74 +246,59 @@ func (p *Project) Build(ctx context.Context, cl *client.Client, targetRef string
 	for _, o := range options {
 		err := o(&opts)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	// Relying on the buildkit cache alone does not result in fixed content hashes.
-	// We must locally build hashes and use them as unique image names.
-	baseref, err := p.BaseRef(target)
+	return &BuildSession{
+		Client: cl,
+		Dest:   target,
+		opts:   opts,
+	}, nil
+}
+
+// BuildSession records all state of a build
+type BuildSession struct {
+	Client *client.Client
+	Dest   reference.Named
+
+	opts    buildOpts
+	baseRef reference.Digested
+	baseMF  *ociv1.Manifest
+	baseCfg *ociv1.Image
+}
+
+// DownloadBaseInfo downloads the base image info
+func (s *BuildSession) DownloadBaseInfo(ctx context.Context, p *Project) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("cannot download base image info: %w", err)
+		}
+	}()
+
+	baseref, err := p.BaseRef(s.Dest)
 	if err != nil {
 		return err
 	}
-	if opts.CacheRef == nil {
-		opts.CacheRef = baseref
-	}
+	log.WithField("ref", baseref).WithField("dest", s.Dest).Debug("downloading base image info")
 
-	log.WithField("ref", baseref.String()).Warn("building base iamge")
-	absbaseref, err := p.Base.buildAsBase(ctx, cl, baseref, opts)
+	absrefs, mf, cfg, err := getImageMetadata(ctx, baseref, s.opts.Resolver)
 	if err != nil {
-		return fmt.Errorf("cannot build base image: %w", err)
+		return err
 	}
 
-	basemf, basecfg, err := getImageMetadata(ctx, absbaseref, opts.Resolver)
-	if err != nil {
-		return fmt.Errorf("cannot fetch base image: %w", err)
-	}
-
-	for _, chk := range p.Chunks {
-		log.WithField("chunk", chk.Name).Warn("building chunk")
-		if len(chk.Tests) > 0 && !opts.NoTests {
-			// temp build and tests first
-			chkref, _, err := chk.build(ctx, cl, absbaseref, target, opts, true)
-			if err != nil {
-				return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
-			}
-
-			_, cfg, err := getImageMetadata(ctx, chkref, opts.Resolver)
-			if err != nil {
-				return err
-			}
-
-			executor := buildkit.NewExecutor(cl, chkref.String(), cfg)
-			_, ok := test.RunTests(ctx, executor, chk.Tests)
-			if !ok {
-				return fmt.Errorf("tests failed")
-			}
-		}
-
-		chkref, _, err := chk.build(ctx, cl, absbaseref, target, opts, false)
-		if err != nil {
-			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
-		}
-
-		chkname, err := p.ChunkRef(target, chk.Name)
-		if err != nil {
-			return err
-		}
-
-		log.WithField("chunk", chk.Name).WithField("from-ref", chkref.String()).Warn("building chunk without base")
-		_, _, err = removeBaseLayer(ctx, opts.Resolver, basemf, basecfg, chkref, chkname)
-		if err != nil {
-			return err
-		}
-	}
-
+	s.baseBuildFinished(absrefs, mf, cfg)
 	return nil
 }
 
-func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *ociv1.Manifest, basecfg *ociv1.Image, chunkref reference.Reference, dest reference.NamedTagged) (chkcfg *ociv1.Image, didbuild bool, err error) {
-	chkmf, chkcfg, err := getImageMetadata(ctx, chunkref, resolver)
+func (s *BuildSession) baseBuildFinished(ref reference.Digested, mf *ociv1.Manifest, cfg *ociv1.Image) {
+	s.baseRef = ref
+	s.baseMF = mf
+	s.baseCfg = cfg
+}
+
+func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *ociv1.Manifest, basecfg *ociv1.Image, chunkref reference.Named, dest reference.NamedTagged) (chkcfg *ociv1.Image, didbuild bool, err error) {
+	_, chkmf, chkcfg, err := getImageMetadata(ctx, chunkref, resolver)
 	if err != nil {
 		return
 	}
@@ -336,7 +357,7 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 		Size:      int64(len(nmf)),
 	}
 
-	if dstmf, dstcfg, err := getImageMetadata(ctx, dest, resolver); err == nil {
+	if _, dstmf, dstcfg, err := getImageMetadata(ctx, dest, resolver); err == nil {
 		if dstmf.Config.Digest == chkmf.Config.Digest {
 			// config is already pushed to remote from a previous run.
 			// We just assume that the manifest must be up to date, too and stop here.
@@ -423,7 +444,7 @@ func copyLayer(ctx context.Context, fetcher remotes.Fetcher, pusher remotes.Push
 	return w.Commit(ctx, desc.Size, desc.Digest)
 }
 
-func getImageMetadata(ctx context.Context, ref reference.Reference, resolver remotes.Resolver) (manifest *ociv1.Manifest, config *ociv1.Image, err error) {
+func getImageMetadata(ctx context.Context, ref reference.Reference, resolver remotes.Resolver) (absref reference.Digested, manifest *ociv1.Manifest, config *ociv1.Image, err error) {
 	_, desc, err := resolver.Resolve(ctx, ref.String())
 	if err != nil {
 		return
@@ -463,13 +484,29 @@ func getImageMetadata(ctx context.Context, ref reference.Reference, resolver rem
 	if err != nil {
 		return
 	}
-
 	manifest = &mf
 	config = &cfg
+
+	if rr, ok := ref.(reference.Digested); ok {
+		absref = rr
+	} else if rr, ok := ref.(reference.Named); ok {
+		absref, err = reference.WithDigest(rr, desc.Digest)
+		if err != nil {
+			return
+		}
+	} else {
+		err = fmt.Errorf("invalid reference type")
+		return
+	}
+
 	return
 }
 
 func (p *ProjectChunk) hash(baseref string) (res string, err error) {
+	if p.cachedHash != "" {
+		return p.cachedHash, nil
+	}
+
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("cannot compute hash: %w", err)
@@ -487,6 +524,7 @@ func (p *ProjectChunk) hash(baseref string) (res string, err error) {
 	}
 
 	res = hex.EncodeToString(hash.Sum(nil))
+	p.cachedHash = res
 	return
 }
 
@@ -551,8 +589,8 @@ func (p *Project) ChunkRef(build reference.Named, chunk string) (reference.Named
 	return reference.WithTag(build, chunk)
 }
 
-func (p *ProjectChunk) buildAsBase(ctx context.Context, cl *client.Client, dest reference.Named, opts buildOpts) (absref reference.Digested, err error) {
-	_, desc, err := opts.Resolver.Resolve(ctx, dest.String())
+func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, sess *BuildSession) (absref reference.Digested, err error) {
+	_, desc, err := sess.opts.Resolver.Resolve(ctx, dest.String())
 	if err == nil {
 		// if err == nil the image exists already
 		return reference.WithDigest(dest, desc.Digest)
@@ -575,7 +613,7 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, cl *client.Client, dest 
 
 	rchan := make(chan map[string]string, 1)
 	eg.Go(func() error {
-		resp, err := cl.Solve(ctx, nil, client.SolveOpt{
+		resp, err := sess.Client.Solve(ctx, nil, client.SolveOpt{
 			Frontend:     "dockerfile.v0",
 			CacheImports: []client.CacheOptionsEntry{cacheImport},
 			CacheExports: []client.CacheOptionsEntry{cacheExport},
@@ -606,7 +644,7 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, cl *client.Client, dest 
 		var c console.Console
 
 		isTTY := isatty.IsTerminal(os.Stderr.Fd())
-		if !opts.PlainOutput && isTTY {
+		if !sess.opts.PlainOutput && isTTY {
 			cf, err := console.ConsoleFromFile(os.Stderr)
 			if err != nil {
 				return err
@@ -635,36 +673,83 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, cl *client.Client, dest 
 	return resref, nil
 }
 
-func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base reference.Digested, dst reference.Named, opts buildOpts, tempBuild bool) (absref reference.Reference, didbuild bool, err error) {
-	hash, err := p.hash(base.String())
-	if err != nil {
-		return
-	}
-
-	dest, err := reference.WithTag(dst, fmt.Sprintf("%s--%s", p.Name, hash))
-	if err != nil {
-		return
-	}
-
-	resrefstr, _, err := opts.Resolver.Resolve(ctx, dest.String())
-	if err == nil {
-		// err == nil means the image exists already
-		absref, err = reference.Parse(resrefstr)
-		return
-	}
-	didbuild = true
-
-	if tempBuild {
-		dest, err = reference.WithTag(dst, fmt.Sprintf("%s--temp%s", p.Name, hash))
+func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef reference.NamedTagged, didBuild bool, err error) {
+	if !sess.opts.NoTests && len(p.Tests) > 0 {
+		// build temp image for testing
+		testRef, didBuild, err := p.buildImage(ctx, ImageTypeTest, sess)
 		if err != nil {
-			return
+			return nil, false, err
+		}
+
+		if didBuild {
+			_, _, imgcfg, err := getImageMetadata(ctx, testRef, sess.opts.Resolver)
+			if err != nil {
+				return nil, false, err
+			}
+
+			log.WithField("chunk", p.Name).Warn("running tests")
+			executor := buildkit.NewExecutor(sess.Client, testRef.String(), imgcfg)
+			_, ok := test.RunTests(ctx, executor, p.Tests)
+			if !ok {
+				return nil, false, fmt.Errorf("%s: tests failed", p.Name)
+			}
 		}
 	}
 
-	cacheTgt, err := reference.WithTag(opts.CacheRef, fmt.Sprintf("%s--cache", p.Name))
+	// build actual full image
+	fullRef, didBuild, err := p.buildImage(ctx, ImageTypeFull, sess)
 	if err != nil {
 		return
 	}
+
+	chkRef, err = p.ImageName(ImageTypeChunked, sess)
+	if err != nil {
+		return
+	}
+	log.WithField("chunk", p.Name).WithField("ref", chkRef).Warn("building chunked image")
+
+	// remove base image
+	_, didBuild, err = removeBaseLayer(ctx, sess.opts.Resolver, sess.baseMF, sess.baseCfg, fullRef, chkRef)
+	return
+}
+
+// ChunkImageType describes the chunk build artifact type
+type ChunkImageType string
+
+const (
+	// ImageTypeTest is an image built for testing
+	ImageTypeTest ChunkImageType = "test"
+	// ImageTypeFull is the full chunk image
+	ImageTypeFull ChunkImageType = "full"
+	// ImageTypeChunked is the chunk image with the base layers removed
+	ImageTypeChunked ChunkImageType = "chunked"
+)
+
+// ImageName produces a chunk image name
+func (p *ProjectChunk) ImageName(tpe ChunkImageType, sess *BuildSession) (reference.NamedTagged, error) {
+	if sess.baseRef == nil {
+		return nil, fmt.Errorf("base ref not set")
+	}
+	hash, err := p.hash(sess.baseRef.String())
+	if err != nil {
+		return nil, fmt.Errorf("cannot compute chunk hash: %w", err)
+	}
+	return reference.WithTag(sess.Dest, fmt.Sprintf("%s--%s--%s", p.Name, hash, tpe))
+}
+
+func (p *ProjectChunk) buildImage(ctx context.Context, tpe ChunkImageType, sess *BuildSession) (tgt reference.Named, didBuild bool, err error) {
+	tgt, err = p.ImageName(tpe, sess)
+	if err != nil {
+		return
+	}
+	log.WithField("chunk", p.Name).WithField("ref", tgt).Warnf("building %s image", tpe)
+
+	_, _, err = sess.opts.Resolver.Resolve(ctx, tgt.Name())
+	if err == nil {
+		// image is already built
+		return tgt, false, nil
+	}
+	didBuild = true
 
 	eg, ctx := errgroup.WithContext(ctx)
 	ch := make(chan *client.SolveStatus)
@@ -674,30 +759,27 @@ func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base refere
 			{
 				Type: "registry",
 				Attrs: map[string]string{
-					"ref": cacheTgt.String(),
+					"ref": tgt.String(),
 				},
 			},
 		}
 		cacheExports = []client.CacheOptionsEntry{
 			{
-				Type: "registry",
-				Attrs: map[string]string{
-					"ref": cacheTgt.String(),
-				},
+				Type: "inline",
 			},
 		}
 	)
-	if opts.NoCache {
+	if sess.opts.NoCache {
 		cacheImports = []client.CacheOptionsEntry{}
 		cacheExports = []client.CacheOptionsEntry{}
 	}
 
 	rchan := make(chan map[string]string, 1)
 	eg.Go(func() error {
-		resp, err := cl.Solve(ctx, nil, client.SolveOpt{
+		resp, err := sess.Client.Solve(ctx, nil, client.SolveOpt{
 			Frontend: "dockerfile.v0",
 			FrontendAttrs: map[string]string{
-				"build-arg:base": base.String(),
+				"build-arg:base": sess.baseRef.String(),
 			},
 			CacheImports: cacheImports,
 			CacheExports: cacheExports,
@@ -708,7 +790,7 @@ func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base refere
 				{
 					Type: "image",
 					Attrs: map[string]string{
-						"name": dest.String(),
+						"name": tgt.String(),
 						"push": "true",
 					},
 				},
@@ -728,7 +810,7 @@ func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base refere
 		var c console.Console
 
 		isTTY := isatty.IsTerminal(os.Stderr.Fd())
-		if !opts.PlainOutput && isTTY {
+		if !sess.opts.PlainOutput && isTTY {
 			cf, err := console.ConsoleFromFile(os.Stderr)
 			if err != nil {
 				return err
@@ -749,10 +831,9 @@ func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base refere
 	if err != nil {
 		return
 	}
-	resref, err := reference.WithDigest(dest, dgst)
+	resref, err := reference.WithDigest(tgt, dgst)
 	if err != nil {
 		return
 	}
-
-	return resref, true, nil
+	return resref, didBuild, nil
 }
