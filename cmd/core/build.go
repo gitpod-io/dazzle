@@ -62,7 +62,14 @@ var buildCmd = &cobra.Command{
 			return err
 		}
 
-		return prj.Build(context.Background(), session)
+		err = prj.Build(context.Background(), session)
+		if err != nil {
+			return err
+		}
+
+		session.PrintBuildInfo()
+
+		return nil
 	},
 }
 
