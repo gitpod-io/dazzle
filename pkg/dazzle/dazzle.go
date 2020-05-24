@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/bmatcuk/doublestar"
@@ -263,6 +264,7 @@ func NewSession(cl *client.Client, targetRef string, options ...BuildOpt) (*Buil
 		Client: cl,
 		Dest:   target,
 		opts:   opts,
+		chunks: make(map[string]*ociv1.Manifest),
 	}, nil
 }
 
@@ -275,6 +277,28 @@ type BuildSession struct {
 	baseRef reference.Digested
 	baseMF  *ociv1.Manifest
 	baseCfg *ociv1.Image
+	chunks  map[string]*ociv1.Manifest
+}
+
+// PrintBuildInfo logs information about the built chunks
+func (s *BuildSession) PrintBuildInfo() {
+	keys := make([]string, 0, len(s.chunks))
+	for c := range s.chunks {
+		keys = append(keys, c)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+
+	for _, c := range keys {
+		var size int64
+		for _, l := range s.chunks[c].Layers {
+			size += l.Size
+		}
+		log.WithField("chunk", c).WithField("size_mb", float64(size)/(1024.0*1024.0)).Info("chunk built")
+	}
+}
+
+func (s *BuildSession) recordChunk(name string, mf *ociv1.Manifest) {
+	s.chunks[name] = mf
 }
 
 // DownloadBaseInfo downloads the base image info
@@ -306,7 +330,7 @@ func (s *BuildSession) baseBuildFinished(ref reference.Digested, mf *ociv1.Manif
 	s.baseCfg = cfg
 }
 
-func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *ociv1.Manifest, basecfg *ociv1.Image, chunkref reference.Named, dest reference.NamedTagged) (chkcfg *ociv1.Image, didbuild bool, err error) {
+func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *ociv1.Manifest, basecfg *ociv1.Image, chunkref reference.Named, dest reference.NamedTagged) (chkmf *ociv1.Manifest, didbuild bool, err error) {
 	_, chkmf, chkcfg, err := getImageMetadata(ctx, chunkref, resolver)
 	if err != nil {
 		return
@@ -366,11 +390,11 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 		Size:      int64(len(nmf)),
 	}
 
-	if _, dstmf, dstcfg, err := getImageMetadata(ctx, dest, resolver); err == nil {
+	if _, dstmf, _, err := getImageMetadata(ctx, dest, resolver); err == nil {
 		if dstmf.Config.Digest == chkmf.Config.Digest {
 			// config is already pushed to remote from a previous run.
 			// We just assume that the manifest must be up to date, too and stop here.
-			return dstcfg, false, nil
+			return dstmf, false, nil
 		}
 	}
 	didbuild = true
@@ -426,7 +450,7 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 		}
 	}
 
-	return chkcfg, true, nil
+	return chkmf, true, nil
 }
 
 func copyLayer(ctx context.Context, fetcher remotes.Fetcher, pusher remotes.Pusher, desc ociv1.Descriptor) (err error) {
@@ -548,7 +572,8 @@ func (p *ProjectChunk) manifest(baseref string, out io.Writer) (err error) {
 		if stat, err := os.Stat(src); err != nil {
 			return err
 		} else if stat.IsDir() {
-			return fmt.Errorf("source list must not contain directories")
+			res = append(res, strings.TrimPrefix(src, p.ContextPath))
+			continue
 		}
 
 		file, err := os.OpenFile(src, os.O_RDONLY, 0644)
@@ -721,10 +746,12 @@ func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef re
 		return
 	}
 	log.WithField("chunk", p.Name).WithField("ref", chkRef).Warn("building chunked image")
-	_, didBuild, err = removeBaseLayer(ctx, sess.opts.Resolver, sess.baseMF, sess.baseCfg, fullRef, chkRef)
+	mf, didBuild, err := removeBaseLayer(ctx, sess.opts.Resolver, sess.baseMF, sess.baseCfg, fullRef, chkRef)
 	if err != nil {
 		return
 	}
+
+	sess.recordChunk(chkRef.String(), mf)
 
 	return
 }
