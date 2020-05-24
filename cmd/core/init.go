@@ -21,6 +21,7 @@
 package core
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -44,7 +45,7 @@ var initCmd = &cobra.Command{
 			if err != nil {
 				return
 			}
-			err = ioutil.WriteFile(filepath.Join(chk, "tests.yaml"), []byte("- desc: \"it should say hello\"\n  command: [\"echo\", \"hello\"]\n  assert:\n  - status == 0\n  - stdout.indexOf(\"hello\") != -1\n  - stderr.length == 0"), 0755)
+			err = ioutil.WriteFile(fmt.Sprintf("%s-tests.yaml", chk), []byte("- desc: \"it should say hello\"\n  command: [\"echo\", \"hello\"]\n  assert:\n  - status == 0\n  - stdout.indexOf(\"hello\") != -1\n  - stderr.length == 0"), 0755)
 			if err != nil {
 				return
 			}
