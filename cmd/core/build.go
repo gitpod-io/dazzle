@@ -22,6 +22,7 @@ package core
 
 import (
 	"context"
+	"os"
 
 	"github.com/csweichel/dazzle/pkg/dazzle"
 	"github.com/moby/buildkit/client"
@@ -30,17 +31,16 @@ import (
 
 // buildCmd represents the build command
 var buildCmd = &cobra.Command{
-	Use:   "build <target-ref> <context>",
+	Use:   "build <target-ref>",
 	Short: "Builds a Docker image with independent layers",
-	Args:  cobra.MinimumNArgs(2),
+	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctxdir, _ := cmd.Flags().GetString("context")
 		nocache, _ := cmd.Flags().GetBool("no-cache")
+		plainOutput, _ := cmd.Flags().GetBool("plain-output")
 
-		var (
-			targetref = args[0]
-			wd        = args[1]
-		)
-		prj, err := dazzle.LoadFromDir(wd)
+		var targetref = args[0]
+		prj, err := dazzle.LoadFromDir(ctxdir)
 		if err != nil {
 			return err
 		}
@@ -51,7 +51,11 @@ var buildCmd = &cobra.Command{
 			return err
 		}
 
-		session, err := dazzle.NewSession(cl, targetref, dazzle.WithResolver(getResolver()), dazzle.WithNoCache(nocache))
+		session, err := dazzle.NewSession(cl, targetref,
+			dazzle.WithResolver(getResolver()),
+			dazzle.WithNoCache(nocache),
+			dazzle.WithPlainOutput(plainOutput),
+		)
 		if err != nil {
 			return err
 		}
@@ -63,7 +67,13 @@ var buildCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(buildCmd)
 
-	buildCmd.Flags().String("addr", "unix:///run/buildkit/buildkitd.sock", "address of buildkitd")
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
 
+	buildCmd.Flags().String("addr", "unix:///run/buildkit/buildkitd.sock", "address of buildkitd")
 	buildCmd.Flags().Bool("no-cache", false, "disables the buildkit build cache")
+	buildCmd.Flags().String("context", wd, "context path")
+	buildCmd.Flags().Bool("plain-output", false, "produce plain output")
 }
