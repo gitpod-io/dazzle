@@ -38,6 +38,7 @@ var buildCmd = &cobra.Command{
 		ctxdir, _ := cmd.Flags().GetString("context")
 		nocache, _ := cmd.Flags().GetBool("no-cache")
 		plainOutput, _ := cmd.Flags().GetBool("plain-output")
+		cwh, _ := cmd.Flags().GetBool("chunked-without-hash")
 
 		var targetref = args[0]
 		prj, err := dazzle.LoadFromDir(ctxdir)
@@ -55,6 +56,7 @@ var buildCmd = &cobra.Command{
 			dazzle.WithResolver(getResolver()),
 			dazzle.WithNoCache(nocache),
 			dazzle.WithPlainOutput(plainOutput),
+			dazzle.WithChunkedWithoutHash(cwh),
 		)
 		if err != nil {
 			return err
@@ -76,4 +78,5 @@ func init() {
 	buildCmd.Flags().Bool("no-cache", false, "disables the buildkit build cache")
 	buildCmd.Flags().String("context", wd, "context path")
 	buildCmd.Flags().Bool("plain-output", false, "produce plain output")
+	buildCmd.Flags().Bool("chunked-without-hash", false, "disable hash qualification for chunked image")
 }

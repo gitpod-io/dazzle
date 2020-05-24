@@ -141,11 +141,12 @@ func loadChunk(base, name string) (*ProjectChunk, error) {
 }
 
 type buildOpts struct {
-	CacheRef    reference.Named
-	NoCache     bool
-	NoTests     bool
-	Resolver    remotes.Resolver
-	PlainOutput bool
+	CacheRef           reference.Named
+	NoCache            bool
+	NoTests            bool
+	Resolver           remotes.Resolver
+	PlainOutput        bool
+	ChunkedWithoutHash bool
 }
 
 // BuildOpt modifies build behaviour
@@ -192,6 +193,14 @@ func WithNoCache(enable bool) BuildOpt {
 func WithNoTests(enable bool) BuildOpt {
 	return func(b *buildOpts) error {
 		b.NoCache = enable
+		return nil
+	}
+}
+
+// WithChunkedWithoutHash disables the hash prefix for the chunked image tag
+func WithChunkedWithoutHash(enable bool) BuildOpt {
+	return func(b *buildOpts) error {
+		b.ChunkedWithoutHash = enable
 		return nil
 	}
 }
@@ -702,14 +711,21 @@ func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef re
 		return
 	}
 
-	chkRef, err = p.ImageName(ImageTypeChunked, sess)
+	// remove base image
+	chktpe := ImageTypeChunked
+	if sess.opts.ChunkedWithoutHash {
+		chktpe = ImageTypeChunkedNoHash
+	}
+	chkRef, err = p.ImageName(chktpe, sess)
 	if err != nil {
 		return
 	}
 	log.WithField("chunk", p.Name).WithField("ref", chkRef).Warn("building chunked image")
-
-	// remove base image
 	_, didBuild, err = removeBaseLayer(ctx, sess.opts.Resolver, sess.baseMF, sess.baseCfg, fullRef, chkRef)
+	if err != nil {
+		return
+	}
+
 	return
 }
 
@@ -723,6 +739,8 @@ const (
 	ImageTypeFull ChunkImageType = "full"
 	// ImageTypeChunked is the chunk image with the base layers removed
 	ImageTypeChunked ChunkImageType = "chunked"
+	// ImageTypeChunkedNoHash is the chunk image with the base layers removed and no hash in the name
+	ImageTypeChunkedNoHash ChunkImageType = "chunked-wohash"
 )
 
 // ImageName produces a chunk image name
@@ -730,6 +748,11 @@ func (p *ProjectChunk) ImageName(tpe ChunkImageType, sess *BuildSession) (refere
 	if sess.baseRef == nil {
 		return nil, fmt.Errorf("base ref not set")
 	}
+
+	if tpe == ImageTypeChunkedNoHash {
+		return reference.WithTag(sess.Dest, fmt.Sprintf("%s", p.Name))
+	}
+
 	hash, err := p.hash(sess.baseRef.String())
 	if err != nil {
 		return nil, fmt.Errorf("cannot compute chunk hash: %w", err)
@@ -742,13 +765,14 @@ func (p *ProjectChunk) buildImage(ctx context.Context, tpe ChunkImageType, sess 
 	if err != nil {
 		return
 	}
-	log.WithField("chunk", p.Name).WithField("ref", tgt).Warnf("building %s image", tpe)
 
-	_, _, err = sess.opts.Resolver.Resolve(ctx, tgt.Name())
+	_, _, err = sess.opts.Resolver.Resolve(ctx, tgt.String())
 	if err == nil {
 		// image is already built
 		return tgt, false, nil
 	}
+
+	log.WithField("chunk", p.Name).WithField("ref", tgt).Warnf("building %s image", tpe)
 	didBuild = true
 
 	eg, ctx := errgroup.WithContext(ctx)
