@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/csweichel/dazzle/pkg/test"
 )
@@ -32,7 +33,10 @@ func main() {
 	executor := test.LocalExecutor{}
 	res, err := executor.Run(context.Background(), &spec)
 	if err != nil {
-		fail(fmt.Errorf("cannot run command: %w", err))
+		res = &test.RunResult{
+			Stderr:     []byte(fmt.Sprintf("cannot run command: %+q\nenv: %s\n", err, strings.Join(os.Environ(), "\n\t"))),
+			StatusCode: 255,
+		}
 	}
 
 	err = json.NewEncoder(os.Stdout).Encode(res)

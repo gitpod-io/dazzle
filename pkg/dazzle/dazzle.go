@@ -19,15 +19,15 @@ import (
 	"github.com/csweichel/dazzle/pkg/test"
 	"github.com/csweichel/dazzle/pkg/test/buildkit"
 	"github.com/docker/distribution/reference"
+	"github.com/mattn/go-isatty"
 	"github.com/minio/highwayhash"
 	"github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	"github.com/opencontainers/go-digest"
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
+	ignore "github.com/sabhiram/go-gitignore"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v2"
@@ -37,10 +37,17 @@ var (
 	hashKey = []byte{0x03, 0x40, 0xf3, 0xc8, 0x94, 0x7c, 0xad, 0x78, 0x75, 0x14, 0x0f, 0x4c, 0x4a, 0xf7, 0xc6, 0x2b, 0x43, 0x13, 0x1d, 0xc2, 0xa8, 0xc7, 0xfc, 0x46, 0x28, 0xf0, 0x68, 0x5e, 0x36, 0x9a, 0x3b, 0x0b}
 )
 
+// ProjectConfig is the structure of a project's dazzle.yaml
+type ProjectConfig struct {
+	ChunkIgnore  []string `yaml:"ignore"`
+	chunkIgnores *ignore.GitIgnore
+}
+
 // Project is a dazzle build project
 type Project struct {
 	Base   ProjectChunk
 	Chunks []ProjectChunk
+	Config ProjectConfig
 }
 
 // ProjectChunk represents a layer chunk in a project
@@ -53,6 +60,24 @@ type ProjectChunk struct {
 
 // LoadFromDir loads a dazzle project from disk
 func LoadFromDir(dir string) (*Project, error) {
+	var (
+		cfg   ProjectConfig
+		cfgfn = filepath.Join(dir, "dazzle.yaml")
+	)
+	if fd, err := os.Open(cfgfn); err == nil {
+		log.WithField("filename", cfgfn).Debug("loading dazzle config")
+		err = yaml.NewDecoder(fd).Decode(&cfg)
+		fd.Close()
+		if err != nil {
+			return nil, fmt.Errorf("cannot load config from %s: %w", cfgfn, err)
+		}
+
+		cfg.chunkIgnores, err = ignore.CompileIgnoreLines(cfg.ChunkIgnore...)
+		if err != nil {
+			return nil, fmt.Errorf("cannot load config from %s: %w", cfgfn, err)
+		}
+	}
+
 	base, err := loadChunkFromDir(filepath.Join(dir, "_base"))
 	if err != nil {
 		return nil, err
@@ -68,7 +93,13 @@ func LoadFromDir(dir string) (*Project, error) {
 
 	res.Chunks = make([]ProjectChunk, 0, len(chds))
 	for _, chd := range chds {
+		if cfg.chunkIgnores != nil && cfg.chunkIgnores.MatchesPath(chd.Name()) {
+			continue
+		}
 		if strings.HasPrefix(chd.Name(), "_") || strings.HasPrefix(chd.Name(), ".") {
+			continue
+		}
+		if !chd.IsDir() {
 			continue
 		}
 		chnk, err := loadChunkFromDir(filepath.Join(dir, chd.Name()))
@@ -212,8 +243,8 @@ func (p *Project) Build(ctx context.Context, cl *client.Client, targetRef string
 			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
 		}
 
-		log.WithField("chunk", chk.Name).Warn("building chunk without base")
-		err = removeBaseLayer(ctx, opts.Resolver, basemf, basecfg, chkref, chkname)
+		log.WithField("chunk", chk.Name).WithField("from-ref", chkref.String()).Warn("building chunk without base")
+		chkcfg, err := removeBaseLayer(ctx, opts.Resolver, basemf, basecfg, chkref, chkname)
 		if err != nil {
 			return err
 		}
@@ -226,7 +257,7 @@ func (p *Project) Build(ctx context.Context, cl *client.Client, targetRef string
 			continue
 		}
 		log.WithField("chunk", chk.Name).Warn("Running chunk tests")
-		executor := buildkit.NewExecutor(cl, chkref.String())
+		executor := buildkit.NewExecutor(cl, chkref.String(), chkcfg)
 		_, ok := test.RunTests(ctx, executor, chk.Tests)
 		if !ok {
 			return fmt.Errorf("tests failed")
@@ -236,7 +267,7 @@ func (p *Project) Build(ctx context.Context, cl *client.Client, targetRef string
 	return nil
 }
 
-func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *ociv1.Manifest, basecfg *ociv1.Image, chunkref reference.Reference, dest reference.NamedTagged) (err error) {
+func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *ociv1.Manifest, basecfg *ociv1.Image, chunkref reference.Reference, dest reference.NamedTagged) (chkcfg *ociv1.Image, err error) {
 	chkmf, chkcfg, err := getImageMetadata(ctx, chunkref, resolver)
 	if err != nil {
 		return
@@ -244,10 +275,10 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 
 	for i := range basemf.Layers {
 		if len(chkmf.Layers) < i {
-			return fmt.Errorf("chunk was not built from base image (too few layers)")
+			return nil, fmt.Errorf("chunk was not built from base image (too few layers)")
 		}
 		if len(chkcfg.RootFS.DiffIDs) < i {
-			return fmt.Errorf("chunk was not built from base image (too few diffIDs)")
+			return nil, fmt.Errorf("chunk was not built from base image (too few diffIDs)")
 		}
 		var (
 			bl = basemf.Layers[i]
@@ -256,10 +287,10 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 			cd = chkcfg.RootFS.DiffIDs[i]
 		)
 		if bl.Digest.String() != cl.Digest.String() {
-			return fmt.Errorf("chunk was not built from base image: digest mistmatch on layer %d: base %s != chunk %s", i, bl.Digest.String(), cl.Digest.String())
+			return nil, fmt.Errorf("chunk was not built from base image: digest mistmatch on layer %d: base %s != chunk %s", i, bl.Digest.String(), cl.Digest.String())
 		}
 		if bd.String() != cd.String() {
-			return fmt.Errorf("chunk was not built from base image: digest mistmatch on diffID %d: base %s != chunk %s", i, bd.String(), cd.String())
+			return nil, fmt.Errorf("chunk was not built from base image: digest mistmatch on diffID %d: base %s != chunk %s", i, bd.String(), cd.String())
 		}
 	}
 
@@ -306,12 +337,12 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 	if errdefs.IsAlreadyExists(err) {
 		// nothing to do
 	} else if err != nil {
-		return fmt.Errorf("cannot push image config: %w", err)
+		return nil, fmt.Errorf("cannot push image config: %w", err)
 	} else {
 		cfgw.Write(ncfg)
 		err = cfgw.Commit(ctx, chkmf.Config.Size, chkmf.Config.Digest)
 		if err != nil && !errdefs.IsAlreadyExists(err) {
-			return fmt.Errorf("cannot push image config: %w", err)
+			return nil, fmt.Errorf("cannot push image config: %w", err)
 		}
 	}
 
@@ -330,16 +361,16 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 	if errdefs.IsAlreadyExists(err) {
 		// nothiong to do
 	} else if err != nil {
-		return fmt.Errorf("cannot push image manifest: %w", err)
+		return nil, fmt.Errorf("cannot push image manifest: %w", err)
 	} else {
 		mfw.Write(nmf)
 		err = mfw.Commit(ctx, mfdesc.Size, mfdesc.Digest)
 		if err != nil && !errdefs.IsAlreadyExists(err) {
-			return fmt.Errorf("cannot push image: %w", err)
+			return nil, fmt.Errorf("cannot push image: %w", err)
 		}
 	}
 
-	return nil
+	return chkcfg, nil
 }
 
 func copyLayer(ctx context.Context, fetcher remotes.Fetcher, pusher remotes.Pusher, desc ociv1.Descriptor) (err error) {
@@ -409,18 +440,6 @@ func getImageMetadata(ctx context.Context, ref reference.Reference, resolver rem
 
 	manifest = &mf
 	config = &cfg
-	return
-}
-
-func (p *ProjectChunk) getLLB(ctx context.Context, base reference.Reference, resolver remotes.Resolver) (state *llb.State, err error) {
-	args := make(map[string]string)
-	if base != nil {
-		args["base"] = base.String()
-	}
-	state, _, err = dockerfile2llb.Dockerfile2LLB(ctx, p.Dockerfile, dockerfile2llb.ConvertOpt{
-		BuildArgs:    args,
-		MetaResolver: newImageMetaResolver(resolver),
-	})
 	return
 }
 
@@ -507,16 +526,6 @@ func (p *Project) ChunkRef(build reference.Named, chunk string) (reference.Named
 }
 
 func (p *ProjectChunk) buildAsBase(ctx context.Context, cl *client.Client, dest reference.Named, opts buildOpts) (absref reference.Digested, err error) {
-	defs, err := p.getLLB(ctx, nil, opts.Resolver)
-	if err != nil {
-		return
-	}
-
-	def, err := defs.Marshal()
-	if err != nil {
-		return
-	}
-
 	_, desc, err := opts.Resolver.Resolve(ctx, dest.String())
 	if err == nil {
 		// if err == nil the image exists already
@@ -540,7 +549,8 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, cl *client.Client, dest 
 
 	rchan := make(chan map[string]string, 1)
 	eg.Go(func() error {
-		resp, err := cl.Solve(ctx, def, client.SolveOpt{
+		resp, err := cl.Solve(ctx, nil, client.SolveOpt{
+			Frontend:     "dockerfile.v0",
 			CacheImports: []client.CacheOptionsEntry{cacheImport},
 			CacheExports: []client.CacheOptionsEntry{cacheExport},
 			Session: []session.Attachable{
@@ -556,7 +566,8 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, cl *client.Client, dest 
 				},
 			},
 			LocalDirs: map[string]string{
-				"context": p.ContextPath,
+				"context":    p.ContextPath,
+				"dockerfile": p.ContextPath,
 			},
 		}, ch)
 		if err != nil {
@@ -568,7 +579,8 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, cl *client.Client, dest 
 	eg.Go(func() error {
 		var c console.Console
 
-		if !opts.PlainOutput {
+		isTTY := isatty.IsTerminal(os.Stderr.Fd())
+		if !opts.PlainOutput && isTTY {
 			cf, err := console.ConsoleFromFile(os.Stderr)
 			if err != nil {
 				return err
@@ -598,16 +610,6 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, cl *client.Client, dest 
 }
 
 func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base reference.Digested, dst reference.Named, opts buildOpts) (absref reference.Reference, err error) {
-	defs, err := p.getLLB(ctx, base, opts.Resolver)
-	if err != nil {
-		return
-	}
-
-	def, err := defs.Marshal()
-	if err != nil {
-		return
-	}
-
 	hash, err := p.hash(base.String())
 	if err != nil {
 		return
@@ -659,7 +661,11 @@ func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base refere
 	// TODO: export locally and subtract base image
 	rchan := make(chan map[string]string, 1)
 	eg.Go(func() error {
-		resp, err := cl.Solve(ctx, def, client.SolveOpt{
+		resp, err := cl.Solve(ctx, nil, client.SolveOpt{
+			Frontend: "dockerfile.v0",
+			FrontendAttrs: map[string]string{
+				"build-arg:base": base.String(),
+			},
 			CacheImports: cacheImports,
 			CacheExports: cacheExports,
 			Session: []session.Attachable{
@@ -675,7 +681,8 @@ func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base refere
 				},
 			},
 			LocalDirs: map[string]string{
-				"context": p.ContextPath,
+				"context":    p.ContextPath,
+				"dockerfile": p.ContextPath,
 			},
 		}, ch)
 		if err != nil {
@@ -687,7 +694,8 @@ func (p *ProjectChunk) build(ctx context.Context, cl *client.Client, base refere
 	eg.Go(func() error {
 		var c console.Console
 
-		if !opts.PlainOutput {
+		isTTY := isatty.IsTerminal(os.Stderr.Fd())
+		if !opts.PlainOutput && isTTY {
 			cf, err := console.ConsoleFromFile(os.Stderr)
 			if err != nil {
 				return err

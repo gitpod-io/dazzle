@@ -3,6 +3,7 @@ package buildkit
 import (
 	"context"
 	"os"
+	"strings"
 
 	"github.com/csweichel/dazzle/pkg/test"
 	"github.com/csweichel/dazzle/pkg/test/runner"
@@ -10,15 +11,17 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
+	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
 // NewExecutor creates a new buildkit-backed executor
-func NewExecutor(cl *client.Client, ref string) *Executor {
+func NewExecutor(cl *client.Client, ref string, cfg *ociv1.Image) *Executor {
 	return &Executor{
 		cl:  cl,
 		ref: ref,
+		cfg: cfg,
 	}
 }
 
@@ -26,6 +29,7 @@ func NewExecutor(cl *client.Client, ref string) *Executor {
 type Executor struct {
 	cl  *client.Client
 	ref string
+	cfg *ociv1.Image
 }
 
 // Run executes the test
@@ -38,9 +42,20 @@ func (b *Executor) Run(ctx context.Context, spec *test.Spec) (rr *test.RunResult
 	if err != nil {
 		return
 	}
-	def, err := llb.Image(b.ref).
-		File(llb.Mkfile("/bin/dazzle_runner", 0777, rb)).
-		Run(llb.Args(append([]string{"/bin/dazzle_runner"}, espec...)), llb.IgnoreCache).
+
+	state := llb.Image(b.ref)
+	if user := b.cfg.Config.User; user != "" {
+		state = state.User(user)
+		log.WithField("user", user).Debug("runnig test as user")
+	}
+	for _, e := range b.cfg.Config.Env {
+		segs := strings.Split(e, "=")
+		state = state.AddEnv(segs[0], segs[1])
+	}
+	def, err := state.
+		File(llb.Mkdir("/dazzle", 0755)).
+		File(llb.Mkfile("/dazzle/runner", 0777, rb)).
+		Run(llb.Args(append([]string{"/dazzle/runner"}, espec...)), llb.IgnoreCache).
 		Root().
 		Marshal()
 	if err != nil {
@@ -88,9 +103,9 @@ func (b *Executor) Run(ctx context.Context, spec *test.Spec) (rr *test.RunResult
 		}
 	})
 	err = eg.Wait()
-	if err != nil {
-		return
-	}
+	// if err != nil {
+	// 	return
+	// }
 
 	buf := <-rchan
 	log.WithField("buf", string(buf)).Debug("received test run output")

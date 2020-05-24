@@ -1,4 +1,4 @@
-// Copyright © 2019 Christian Weichel
+// Copyright © 2020 Christian Weichel
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -24,9 +24,7 @@ import (
 	"context"
 
 	"github.com/csweichel/dazzle/pkg/dazzle"
-	"github.com/csweichel/dazzle/pkg/fancylog"
 	"github.com/moby/buildkit/client"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -36,13 +34,6 @@ var buildCmd = &cobra.Command{
 	Short: "Builds a Docker image with independent layers",
 	Args:  cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		formatter := &fancylog.Formatter{}
-		log.SetFormatter(formatter)
-		log.SetLevel(log.InfoLevel)
-		if v, _ := cmd.Flags().GetBool("verbose"); v {
-			log.SetLevel(log.DebugLevel)
-		}
-
 		nocache, _ := cmd.Flags().GetBool("no-cache")
 
 		var (
@@ -67,6 +58,6 @@ func init() {
 	rootCmd.AddCommand(buildCmd)
 
 	buildCmd.Flags().String("addr", "unix:///run/buildkit/buildkitd.sock", "address of buildkitd")
-	buildCmd.Flags().BoolP("verbose", "v", false, "enable verbose logging")
+
 	buildCmd.Flags().Bool("no-cache", false, "disables the buildkit build cache")
 }
