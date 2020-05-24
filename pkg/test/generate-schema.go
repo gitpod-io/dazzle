@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/csweichel/dazzle/pkg/test"
 	"github.com/alecthomas/jsonschema"
+	"github.com/csweichel/dazzle/pkg/test"
 )
 
 func main() {

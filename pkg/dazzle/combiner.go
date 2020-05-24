@@ -206,7 +206,7 @@ func (p *Project) Combine(ctx context.Context, chunks []string, build reference.
 				continue
 			}
 
-			executor := buildkit.NewExecutor(options.BuildkitClient, dest.String())
+			executor := buildkit.NewExecutor(options.BuildkitClient, dest.String(), &ccfg)
 			_, ok := test.RunTests(ctx, executor, chk.Tests)
 			if !ok {
 				return fmt.Errorf("tests failed")

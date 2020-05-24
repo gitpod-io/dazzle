@@ -1,4 +1,4 @@
-// Copyright © 2019 Christian Weichel
+// Copyright © 2020 Christian Weichel
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -26,8 +26,8 @@ import (
 
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
+	"github.com/csweichel/dazzle/pkg/fancylog"
 	"github.com/docker/cli/cli/config"
-	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -40,9 +40,25 @@ var rootCmd = &cobra.Command{
 this way we can avoid needless cache invalidation.
 
 THIS IS AN EXPERIEMENT. THINGS WILL BREAK. BEWARE.`,
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		logrus.SetLevel(logrus.DebugLevel)
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		formatter := &fancylog.Formatter{}
+		log.SetFormatter(formatter)
+		log.SetLevel(log.InfoLevel)
+
+		rc := cmd
+		for rc.Parent() != nil {
+			rc = rc.Parent()
+		}
+		if v, _ := rc.PersistentFlags().GetBool("verbose"); v {
+			log.SetLevel(log.DebugLevel)
+		}
+
+		return nil
 	},
+}
+
+func init() {
+	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "enable verbose logging")
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

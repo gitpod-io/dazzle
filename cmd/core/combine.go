@@ -25,7 +25,6 @@ import (
 	"os"
 
 	"github.com/csweichel/dazzle/pkg/dazzle"
-	"github.com/csweichel/dazzle/pkg/fancylog"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client"
 	log "github.com/sirupsen/logrus"
@@ -38,13 +37,6 @@ var combineCmd = &cobra.Command{
 	Short: "Combines previously built chunks into a single image",
 	Args:  cobra.MinimumNArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		formatter := &fancylog.Formatter{}
-		log.SetFormatter(formatter)
-		log.SetLevel(log.InfoLevel)
-		if v, _ := cmd.Flags().GetBool("verbose"); v {
-			log.SetLevel(log.DebugLevel)
-		}
-
 		ctxdir, _ := cmd.Flags().GetString("context")
 		prj, err := dazzle.LoadFromDir(ctxdir)
 		if err != nil {
@@ -84,7 +76,6 @@ func init() {
 	}
 
 	combineCmd.Flags().String("addr", "unix:///run/buildkit/buildkitd.sock", "address of buildkitd")
-	combineCmd.Flags().BoolP("verbose", "v", false, "enable verbose logging")
 	combineCmd.Flags().Bool("no-test", false, "disables the tests")
 	combineCmd.Flags().String("context", wd, "context path")
 }
