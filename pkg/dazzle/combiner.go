@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/containerd/remotes"
 	"github.com/csweichel/dazzle/pkg/test"
 	"github.com/csweichel/dazzle/pkg/test/buildkit"
 	"github.com/docker/distribution/reference"
@@ -42,7 +41,7 @@ func asTempBuild(o *combinerOpts) error {
 
 // Combine combines a set of previously built chunks into a single image while maintaining
 // the layer identity.
-func (p *Project) Combine(ctx context.Context, chunks []string, build reference.Named, dest reference.Named, resolver remotes.Resolver, opts ...CombinerOpt) (err error) {
+func (p *Project) Combine(ctx context.Context, chunks []string, dest reference.Named, sess *BuildSession, opts ...CombinerOpt) (err error) {
 	var options combinerOpts
 	for _, o := range opts {
 		err = o(&options)
@@ -58,7 +57,7 @@ func (p *Project) Combine(ctx context.Context, chunks []string, build reference.
 		if err != nil {
 			return err
 		}
-		err = p.Combine(ctx, chunks, build, tmpdest, resolver, append(opts, asTempBuild)...)
+		err = p.Combine(ctx, chunks, tmpdest, sess, append(opts, asTempBuild)...)
 		if err != nil {
 			return err
 		}
@@ -87,24 +86,21 @@ func (p *Project) Combine(ctx context.Context, chunks []string, build reference.
 		cfgs = make([]*ociv1.Image, 0, len(chunks)+1)
 	)
 
-	baseref, err := p.BaseRef(build)
-	if err != nil {
-		return
+	basemf, basecfg := sess.baseMF, sess.baseCfg
+	if basemf == nil || basecfg == nil {
+		return fmt.Errorf("base image not resolved")
 	}
-	basemf, basecfg, err := getImageMetadata(ctx, baseref, resolver)
-	if err != nil {
-		return
-	}
+
 	mfs = append(mfs, basemf)
 	cfgs = append(cfgs, basecfg)
 
-	for _, c := range chunks {
-		cref, err := p.ChunkRef(build, c)
+	for _, c := range cs {
+		cref, err := c.ImageName(ImageTypeChunked, sess)
 		if err != nil {
 			return err
 		}
 		log.WithField("ref", cref.String()).Info("pulling chunk metadata")
-		mf, cfg, err := getImageMetadata(ctx, cref, resolver)
+		_, mf, cfg, err := getImageMetadata(ctx, cref, sess.opts.Resolver)
 		if err != nil {
 			return err
 		}
@@ -180,7 +176,7 @@ func (p *Project) Combine(ctx context.Context, chunks []string, build reference.
 	log.WithField("content", string(serializedMf)).Debug("produced manifest")
 
 	log.WithField("dest", dest.String()).Info("pushing combined image")
-	pusher, err := resolver.Pusher(ctx, dest.String())
+	pusher, err := sess.opts.Resolver.Pusher(ctx, dest.String())
 	if err != nil {
 		return
 	}

@@ -50,7 +50,13 @@ var buildCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return prj.Build(context.Background(), cl, targetref, dazzle.WithResolver(getResolver()), dazzle.WithNoCache(nocache))
+
+		session, err := dazzle.NewSession(cl, targetref, dazzle.WithResolver(getResolver()), dazzle.WithNoCache(nocache))
+		if err != nil {
+			return err
+		}
+
+		return prj.Build(context.Background(), session)
 	},
 }
 
