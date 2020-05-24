@@ -132,7 +132,6 @@ func (LocalExecutor) Run(ctx context.Context, s *Spec) (res *RunResult, err erro
 	cmd.Stderr = stderr
 
 	if len(s.Entrypoint) > 0 {
-		log.Warn("running in pseudo-tty because of the entrypoint - make sure the entrypoint can deal with this")
 		_, err := pty.Start(cmd)
 		if err != nil {
 			return nil, err
