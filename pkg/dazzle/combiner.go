@@ -286,7 +286,7 @@ func mergeEnv(base *ociv1.Image, others []*ociv1.Image) ([]string, error) {
 
 			k, v := segs[0], segs[1]
 			if ov, ok := envs[k]; ok {
-				ov += ";" + v
+				ov += ":" + v
 				envs[k] = ov
 				continue
 			}
