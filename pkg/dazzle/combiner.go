@@ -106,6 +106,7 @@ func (p *Project) Combine(ctx context.Context, chunks []string, dest reference.N
 		cfgs = make([]*ociv1.Image, 0, len(chunks)+1)
 	)
 
+	log.WithField("ref", sess.baseRef.String()).Info("integrating base metadata")
 	basemf, basecfg := sess.baseMF, sess.baseCfg
 	if basemf == nil || basecfg == nil {
 		return fmt.Errorf("base image not resolved")
