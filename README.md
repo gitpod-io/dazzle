@@ -4,14 +4,14 @@
 [![Go Repord Cart](https://goreportcard.com/badge/github.com/csweichel/dazzle)](https://goreportcard.com/report/github.com/csweichel/dazzle)
 [![Stability: Experimental](https://masterminds.github.io/stability/experimental.svg)](https://masterminds.github.io/stability/experimental.html)
 
-dazzle is a rather experimental Docker image builder. Its goal is to build independent layers where a change to one layer does *not* invalidate the ones sitting "above" it. To this end, dazzle uses black magic.
+dazzle is a rather experimental Docker/OCI image builder. Its goal is to build independent layers where a change to one layer does *not* invalidate the ones sitting "above" it.
 
 **Beware** There's a bit of a [rewrite](https://github.com/csweichel/dazzle/tree/rewrite) going on which makes dazzle about 5x faster, more reliable and less hacky. It also changes the format for dazzle builds, moving from a single Dockerfile to one per "chunk"/layer.
 
 ## How does it work?
 dazzle has three main capabilities.
-1. _build indepedent layers_: dazzle uses a special label in a Docker file to establish "boundaries of independence", or meta layers if you so like. Statements in the form of `LABEL dazzle/layer=somename` establish those bounds. All content prior to the first label is used as base image for the other layers. Come build-time, dazzle will split the Dockerfile at the label statement and build them individually. This prevents accidential cross-talk between the layers.
-2. _merge layers into one image_: to merge any two Docker images (not just those built using dazzle), dazzle uses the Docker tar export to extract the base image and all "addons" (i.e. images that are to be merged). It then manipulates the manifests and image configurations such that upon re-import a single image exists. The process is a bit of a hack and like black magic fragile, possibly error prone and needs a black cat or two to work.
+1. _build indepedent layer chunks_: in a dazzle project there's a `chunks/` folder which contains individual Dockerfiles (e.g. `chunks/something/Dockerfile`). These chunk images are built indepedently of each other. All of them share the same base image using a special build argument `${base}`. Dazzle can build the base image (built from `base/Dockerfile`), as well as the chunk images. After each chunk image build dazzle will remove the base image layer from that image, leaving just the layers that were produced by the chunk Dockerfile.
+2. _merge layers into one image_: dazzle can merge multiple OCI images/chunks (not just those built using dazzle) by building a new manifest and image config that pulls the layers/DiffIDs from the individual chunks and the base image they were built from.
 3. _run tests against images_: to ensure that an image is capable of what we think it should be - epecially after merging - dazzle supports simple tests and assertions that run against Docker images.
 
 ## Would I want to use this?
@@ -22,11 +22,54 @@ For example, if you're building an image that serves as a collection of tools, t
 
 ## Limitations and caveats
 - build args are not suppported at the moment
-- multi-stage builds are not supported and probably never will be (there's no limitation on merging images that were created using multi-stage builds though)
 - there are virtually no tests covering this so things might just break
 - consider this alpa-level software
 
+## Getting started
+```bash
+# start a new project
+dazzle project init
+
+# add our first chunk
+dazzle project init helloworld
+echo hello world > chunks/helloworld/hello.txt
+echo "COPY hello.txt /" >> chunks/helloworld/Dockerfile 
+
+# add another chunk, just for fun
+dazzle project init anotherchunk
+echo some other chunk > chunks/anotherchunk/message.txt
+echo "COPY message.txt /" >> chunks/anotherchunk/Dockerfile
+
+# register a combination which takes in all the chunks
+dazzle project add-combination full helloworld anotherchunk
+
+# build the chunks
+dazzle build eu.gcr.io/some-project/dazzle-test
+
+# build all combinations
+dazzle combine eu.gcr.io/some-project/dazzle-test --all
+```
+
 # Usage
+
+## init
+```
+$ dazzle project init
+Starts a new dazzle project
+
+Usage:
+  dazzle project init [chunk] [flags]
+
+Flags:
+  -h, --help   help for init
+
+Global Flags:
+      --addr string      address of buildkitd (default "unix:///run/buildkit/buildkitd.sock")
+      --context string   context path (default "/workspace/workspace-images")
+  -v, --verbose          enable verbose logging
+```
+
+Starts a new dazzle project. If you don't know where to start, this is the place.
 
 ## build
 ```
@@ -34,93 +77,55 @@ $ dazzle build --help
 Builds a Docker image with independent layers
 
 Usage:
-  dazzle build [context] [flags]
+  dazzle build <target-ref> [flags]
 
 Flags:
-  -f, --file string         name of the Dockerfile (default "Dockerfile")
-  -h, --help                help for build
-  -r, --repository string   name of the Docker repository to work in (e.g. eu.gcr.io/someprj/dazzle-work) (default "dazzle-work")
-  -t, --tag string          tag of the resulting image (default "dazzle-built:latest")
+      --chunked-without-hash   disable hash qualification for chunked image
+  -h, --help                   help for build
+      --no-cache               disables the buildkit build cache
+      --plain-output           produce plain output
+
+Global Flags:
+      --addr string      address of buildkitd (default "unix:///run/buildkit/buildkitd.sock")
+      --context string   context path (default "/workspace/workspace-images")
+  -v, --verbose          enable verbose logging
 ```
 
-Dazzle can build a regular Docker file much like `docker build` would. To benefit from using dazzle the `Dockerfile` must contain labels that split the file into "layers" or chunks.
-These layers remain stable across builds, even if prior/"lower" layers change.
+Dazzle can build regular Docker files much like `docker build` would. `build` will build all images found under `chunks/`.
 
 Dazzle cannot reproducibly build layers but can only re-use previously built ones. To ensure reusable layers and maximize Docker cache hits, dazzle itself caches the layers it builds in a Docker registry.
-It is important you use the `--repository` flag to enable this caching. Otherwise you will not have stable layers accross builds.
 
-Consider the following Dockerfile:
-```Dockerfile
-FROM alpine:3.9
+## combine
+```
+$ dazzle combine --help
+Combines previously built chunks into a single image
 
-RUN touch /base-image
+Usage:
+  dazzle combine <target-ref> [flags]
 
-LABEL dazzle/layer=golang
-LABEL dazzle/test=test-golang.yaml
-RUN apk add --no-cache git make musl-dev go
-ENV GOPATH=/root/go
-ENV PATH=$GOPATH/bin:$PATH
+Flags:
+      --all                  build all combinations
+      --build-ref string     use a different build-ref than the target-ref
+      --chunks string        combine a set of chunks - format is name=chk1,chk2,chkN
+      --combination string   build a specific combination
+  -h, --help                 help for combine
+      --no-test              disables the tests
 
-LABEL dazzle/layer=node
-RUN apk add --no-cache nodejs
+Global Flags:
+      --addr string      address of buildkitd (default "unix:///run/buildkit/buildkitd.sock")
+      --context string   context path (default "/workspace/workspace-images")
+  -v, --verbose          enable verbose logging
 ```
 
-Notice the `LABEL dazzle/layer` entries. A change to the `RUN apk add --no-cache git make musl-dev go` line would **not** re-create the layer created by `RUN apk add --no-cache nodejs` because both are separated by different `dazzle/layer` labels.
-
-This Dockerfile would result in four seperate builds:
-1. The "base image" contains everything before the first `dazzle/layer` entry
-   ```Dockerfile
-   FROM alpine:3.9
-   RUN touch /base-image
-   ```
-2. The "golang" layer which contains
-   ```Dockerfile
-   FROM base-image
-   RUN apk add --no-cache git make musl-dev go
-   ENV GOPATH=/root/go
-   ENV PATH=$GOPATH/bin:$PATH
-   ```
-3. The "node" layer which contains
-   ```Dockerfile
-   FROM base-image
-   RUN apk add --no-cache nodejs
-   ```
-4. The _prologue_ build which is built after the first three were merged into one image and contains
-   ```Dockerfile
-   FROM merged-image
-   ENV GOPATH=/root/go
-   ENV PATH=$GOPATH/bin:$PATH
-   ```
+Dazzle can combine previously built chunks into a single image. For example `dazzle combine some.registry.com/dazzle --chunks foo=chunk1,chunk2` will combine `base`, `chunk1` and `chunk2` into an image called `some.registry.com/dazzle:foo`.
+One can pre-register such chunk combinations using `dazzle project add-combination`.
 
 ### Testing layers and merged images
-During a multi-layer dazzle build one can test the individual layers and the final image.
-To do this end add `LABEL dazzle/test=my-layer-test.yaml` statements within a dazzle layer.
+During a dazzle build one can test the individual layers and the final image.
 During the build dazzle will execute the layer tests for each individual layer, as well as the final image.
 This makes finding and debugging issues created by the layer merge process tractable.
 
-## test
-```
-$ dazzle test --help
-works with image tests
-
-Usage:
-  dazzle test [command]
-
-Available Commands:
-  add         Adds to a dazzle test suite
-  run         Runs a dazzle test suite
-
-Flags:
-  -h, --help   help for test
-
-Use "dazzle test [command] --help" for more information about a command.
-```
-
-Dazzle can test images.
-Each test consists of a command that is executed and a number of assertions against the result of that execution.
-Tests are written in YAML whoose schema is available in `testspec.schema.json`.
-
-Note: `dazzle test add` makes adding new test cases a breeze.
+Each chunk gets its own set of tests found under `tests/chunk.yaml`.
 
 For example:
 ```YAML
