@@ -36,8 +36,8 @@ var initCmd = &cobra.Command{
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		if len(args) > 0 {
-			chk := args[0]
-			err = os.Mkdir(chk, 0755)
+			chk := filepath.Join("chunks", args[0])
+			err = os.MkdirAll(chk, 0755)
 			if err != nil {
 				return
 			}
@@ -45,18 +45,23 @@ var initCmd = &cobra.Command{
 			if err != nil {
 				return
 			}
-			err = ioutil.WriteFile(fmt.Sprintf("%s-tests.yaml", chk), []byte("- desc: \"it should say hello\"\n  command: [\"echo\", \"hello\"]\n  assert:\n  - status == 0\n  - stdout.indexOf(\"hello\") != -1\n  - stderr.length == 0"), 0755)
+
+			err = os.Mkdir("tests", 0755)
+			if err != nil && !os.IsNotExist(err) {
+				return
+			}
+			err = ioutil.WriteFile(fmt.Sprintf("tests/%s.yaml", chk), []byte("- desc: \"it should say hello\"\n  command: [\"echo\", \"hello\"]\n  assert:\n  - status == 0\n  - stdout.indexOf(\"hello\") != -1\n  - stderr.length == 0"), 0755)
 			if err != nil {
 				return
 			}
 			return
 		}
 
-		err = os.Mkdir("_base", 0755)
+		err = os.Mkdir("base", 0755)
 		if err != nil {
 			return
 		}
-		err = ioutil.WriteFile("_base/Dockerfile", []byte("FROM ubuntu:latest\n"), 0755)
+		err = ioutil.WriteFile("base/Dockerfile", []byte("FROM ubuntu:latest\n"), 0755)
 		if err != nil {
 			return
 		}
@@ -79,6 +84,7 @@ combinations:
 			return
 		}
 
+		fmt.Println("dazzle project initialized - use `dazzle init <chunkname>` to add a chunk")
 		return nil
 	},
 }
