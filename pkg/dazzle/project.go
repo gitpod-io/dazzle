@@ -1,3 +1,23 @@
+// Copyright © 2020 Christian Weichel
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
 package dazzle
 
 import (
@@ -25,6 +45,22 @@ type ProjectConfig struct {
 	chunkIgnores *ignore.GitIgnore
 }
 
+// Write writes this config as YAML to a file
+func (pc *ProjectConfig) Write(dir string) error {
+	fd, err := os.OpenFile(filepath.Join(dir, "dazzle.yaml"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+
+	err = yaml.NewEncoder(fd).Encode(pc)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Project is a dazzle build project
 type Project struct {
 	Base   ProjectChunk
@@ -42,24 +78,36 @@ type ProjectChunk struct {
 	cachedHash string
 }
 
-// LoadFromDir loads a dazzle project from disk
-func LoadFromDir(dir string) (*Project, error) {
+// LoadProjectConfig loads a dazzle project config file from disk
+func LoadProjectConfig(dir string) (*ProjectConfig, error) {
 	var (
 		cfg   ProjectConfig
 		cfgfn = filepath.Join(dir, "dazzle.yaml")
 	)
-	if fd, err := os.Open(cfgfn); err == nil {
-		log.WithField("filename", cfgfn).Debug("loading dazzle config")
-		err = yaml.NewDecoder(fd).Decode(&cfg)
-		fd.Close()
-		if err != nil {
-			return nil, fmt.Errorf("cannot load config from %s: %w", cfgfn, err)
-		}
+	fd, err := os.Open(cfgfn)
+	if err != nil {
+		return nil, err
+	}
+	defer fd.Close()
 
-		cfg.chunkIgnores, err = ignore.CompileIgnoreLines(cfg.ChunkIgnore...)
-		if err != nil {
-			return nil, fmt.Errorf("cannot load config from %s: %w", cfgfn, err)
-		}
+	err = yaml.NewDecoder(fd).Decode(&cfg)
+	fd.Close()
+	if err != nil {
+		return nil, fmt.Errorf("cannot load config from %s: %w", cfgfn, err)
+	}
+
+	cfg.chunkIgnores, err = ignore.CompileIgnoreLines(cfg.ChunkIgnore...)
+	if err != nil {
+		return nil, fmt.Errorf("cannot load config from %s: %w", cfgfn, err)
+	}
+	return &cfg, nil
+}
+
+// LoadFromDir loads a dazzle project from disk
+func LoadFromDir(dir string) (*Project, error) {
+	cfg, err := LoadProjectConfig(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
 	}
 
 	var (
@@ -229,4 +277,13 @@ func (p *ProjectChunk) ImageName(tpe ChunkImageType, sess *BuildSession) (refere
 		return nil, fmt.Errorf("cannot compute chunk hash: %w", err)
 	}
 	return reference.WithTag(sess.Dest, fmt.Sprintf("%s--%s--%s", p.Name, hash, tpe))
+}
+
+// PrintManifest prints the manifest to writer ... this is intended for debugging only
+func (p *ProjectChunk) PrintManifest(out io.Writer, sess *BuildSession) error {
+	if sess.baseRef == nil {
+		return fmt.Errorf("base ref not set")
+	}
+
+	return p.manifest(sess.baseRef.String(), out)
 }

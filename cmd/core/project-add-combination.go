@@ -24,12 +24,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var testCmd = &cobra.Command{
-	Use:   "test <command>",
-	Short: "works with image tests",
-	Args:  cobra.MinimumNArgs(1),
+var projectAddCombinationCmd = &cobra.Command{
+	Use:   "add-combination <name> <chunk> [chunk ...]",
+	Short: "adds a combination to a project",
+	Args:  cobra.MinimumNArgs(2),
 }
 
 func init() {
-	rootCmd.AddCommand(testCmd)
+	projectCmd.AddCommand(projectAddCombinationCmd)
 }

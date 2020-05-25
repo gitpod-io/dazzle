@@ -32,6 +32,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var rootCfg struct {
+	Verbose      bool
+	ContextDir   string
+	BuildkitAddr string
+}
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "dazzle",
@@ -45,11 +51,7 @@ THIS IS AN EXPERIEMENT. THINGS WILL BREAK. BEWARE.`,
 		log.SetFormatter(formatter)
 		log.SetLevel(log.InfoLevel)
 
-		rc := cmd
-		for rc.Parent() != nil {
-			rc = rc.Parent()
-		}
-		if v, _ := rc.PersistentFlags().GetBool("verbose"); v {
+		if rootCfg.Verbose {
 			log.SetLevel(log.DebugLevel)
 		}
 
@@ -58,7 +60,14 @@ THIS IS AN EXPERIEMENT. THINGS WILL BREAK. BEWARE.`,
 }
 
 func init() {
-	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "enable verbose logging")
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
+	rootCmd.PersistentFlags().BoolVarP(&rootCfg.Verbose, "verbose", "v", false, "enable verbose logging")
+	rootCmd.PersistentFlags().StringVar(&rootCfg.ContextDir, "context", wd, "context path")
+	rootCmd.PersistentFlags().StringVar(&rootCfg.BuildkitAddr, "addr", "unix:///run/buildkit/buildkitd.sock", "address of buildkitd")
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
