@@ -21,6 +21,10 @@
 package core
 
 import (
+	"fmt"
+	"os"
+
+	"github.com/csweichel/dazzle/pkg/dazzle"
 	"github.com/spf13/cobra"
 )
 
@@ -28,6 +32,27 @@ var projectAddCombinationCmd = &cobra.Command{
 	Use:   "add-combination <name> <chunk> [chunk ...]",
 	Short: "adds a combination to a project",
 	Args:  cobra.MinimumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := dazzle.LoadProjectConfig(rootCfg.ContextDir)
+		if os.IsNotExist(err) {
+			cfg = &dazzle.ProjectConfig{}
+		} else if err != nil {
+			return fmt.Errorf("cannot load project config: %w", err)
+		}
+
+		name, chunks := args[0], args[1:]
+		for _, comb := range cfg.Combinations {
+			if comb.Name == name {
+				return fmt.Errorf("combination %s exists already", name)
+			}
+		}
+		cfg.Combinations = append(cfg.Combinations, dazzle.ChunkCombination{
+			Name:   name,
+			Chunks: chunks,
+		})
+
+		return cfg.Write(rootCfg.ContextDir)
+	},
 }
 
 func init() {

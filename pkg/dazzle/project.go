@@ -40,9 +40,16 @@ import (
 
 // ProjectConfig is the structure of a project's dazzle.yaml
 type ProjectConfig struct {
-	ChunkIgnore []string `yaml:"ignore"`
+	Combinations []ChunkCombination `yaml:"combinations"`
+	ChunkIgnore  []string           `yaml:"ignore"`
 
 	chunkIgnores *ignore.GitIgnore
+}
+
+// ChunkCombination combines several chunks to a new image
+type ChunkCombination struct {
+	Name   string   `yaml:"name"`
+	Chunks []string `yaml:"chunks"`
 }
 
 // Write writes this config as YAML to a file
@@ -100,6 +107,7 @@ func LoadProjectConfig(dir string) (*ProjectConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot load config from %s: %w", cfgfn, err)
 	}
+
 	return &cfg, nil
 }
 
@@ -121,7 +129,8 @@ func LoadFromDir(dir string) (*Project, error) {
 	}
 
 	res := &Project{
-		Base: *base,
+		Config: *cfg,
+		Base:   *base,
 	}
 	chds, err := ioutil.ReadDir(chunksDir)
 	if err != nil {
