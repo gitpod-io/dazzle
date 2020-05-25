@@ -18,37 +18,34 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package dazzle
+package core
 
 import (
-	"context"
+	"fmt"
+	"os"
 
-	"github.com/containerd/containerd/remotes"
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/util/contentutil"
-	"github.com/moby/buildkit/util/imageutil"
-	"github.com/opencontainers/go-digest"
+	"github.com/csweichel/dazzle/pkg/dazzle"
+	"github.com/spf13/cobra"
 )
 
-func newImageMetaResolver(resolver remotes.Resolver) *imageMetaResolver {
-	return &imageMetaResolver{
-		resolver: resolver,
-		buffer:   contentutil.NewBuffer(),
-	}
+var projectIgnoreCmd = &cobra.Command{
+	Use:   "ignore <path> [path ...]",
+	Short: "adds a chunk to the ignore list",
+	Args:  cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := dazzle.LoadProjectConfig(rootCfg.ContextDir)
+		if os.IsNotExist(err) {
+			cfg = &dazzle.ProjectConfig{}
+		} else if err != nil {
+			return fmt.Errorf("cannot load project config: %w", err)
+		}
+
+		cfg.ChunkIgnore = append(cfg.ChunkIgnore, args...)
+
+		return cfg.Write(rootCfg.ContextDir)
+	},
 }
 
-type imageMetaResolver struct {
-	resolver remotes.Resolver
-	buffer   contentutil.Buffer
-}
-
-func (imr *imageMetaResolver) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (digest.Digest, []byte, error) {
-	platform := opt.Platform
-
-	dgst, config, err := imageutil.Config(ctx, ref, imr.resolver, imr.buffer, nil, platform)
-	if err != nil {
-		return "", nil, err
-	}
-
-	return dgst, config, nil
+func init() {
+	projectCmd.AddCommand(projectIgnoreCmd)
 }

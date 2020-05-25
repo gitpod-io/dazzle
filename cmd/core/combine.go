@@ -22,7 +22,6 @@ package core
 
 import (
 	"context"
-	"os"
 
 	"github.com/csweichel/dazzle/pkg/dazzle"
 	"github.com/docker/distribution/reference"
@@ -37,8 +36,7 @@ var combineCmd = &cobra.Command{
 	Short: "Combines previously built chunks into a single image",
 	Args:  cobra.MinimumNArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctxdir, _ := cmd.Flags().GetString("context")
-		prj, err := dazzle.LoadFromDir(ctxdir)
+		prj, err := dazzle.LoadFromDir(rootCfg.ContextDir)
 		if err != nil {
 			return err
 		}
@@ -50,12 +48,12 @@ var combineCmd = &cobra.Command{
 			log.WithError(err).Fatal("cannot parse dest ref")
 		}
 
-		var opts []dazzle.CombinerOpt
-		sckt, _ := cmd.Flags().GetString("addr")
-		cl, err := client.New(context.Background(), sckt, client.WithFailFast())
+		cl, err := client.New(context.Background(), rootCfg.BuildkitAddr, client.WithFailFast())
 		if err != nil {
 			return err
 		}
+
+		var opts []dazzle.CombinerOpt
 		notest, _ := cmd.Flags().GetBool("no-test")
 		if !notest {
 			opts = append(opts, dazzle.WithTests(cl))
@@ -77,12 +75,5 @@ var combineCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(combineCmd)
 
-	wd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
-	combineCmd.Flags().String("addr", "unix:///run/buildkit/buildkitd.sock", "address of buildkitd")
 	combineCmd.Flags().Bool("no-test", false, "disables the tests")
-	combineCmd.Flags().String("context", wd, "context path")
 }

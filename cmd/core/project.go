@@ -18,37 +18,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package dazzle
+package core
 
 import (
-	"context"
-
-	"github.com/containerd/containerd/remotes"
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/util/contentutil"
-	"github.com/moby/buildkit/util/imageutil"
-	"github.com/opencontainers/go-digest"
+	"github.com/spf13/cobra"
 )
 
-func newImageMetaResolver(resolver remotes.Resolver) *imageMetaResolver {
-	return &imageMetaResolver{
-		resolver: resolver,
-		buffer:   contentutil.NewBuffer(),
-	}
+var projectCmd = &cobra.Command{
+	Use:   "project <command>",
+	Short: "describes, debugs and configures a dazzle project",
+	Args:  cobra.MinimumNArgs(1),
 }
 
-type imageMetaResolver struct {
-	resolver remotes.Resolver
-	buffer   contentutil.Buffer
-}
-
-func (imr *imageMetaResolver) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (digest.Digest, []byte, error) {
-	platform := opt.Platform
-
-	dgst, config, err := imageutil.Config(ctx, ref, imr.resolver, imr.buffer, nil, platform)
-	if err != nil {
-		return "", nil, err
-	}
-
-	return dgst, config, nil
+func init() {
+	rootCmd.AddCommand(projectCmd)
 }

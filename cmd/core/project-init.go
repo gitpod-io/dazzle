@@ -29,25 +29,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// initCmd represents the version command
-var initCmd = &cobra.Command{
+// projectInitCmd represents the version command
+var projectInitCmd = &cobra.Command{
 	Use:   "init [chunk]",
 	Short: "Starts a new dazzle project",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		if len(args) > 0 {
-			chk := filepath.Join("chunks", args[0])
-			err = os.MkdirAll(chk, 0755)
+			chk := args[0]
+			err = os.MkdirAll(filepath.Join("chunks", chk), 0755)
 			if err != nil {
 				return
 			}
-			err = ioutil.WriteFile(filepath.Join(chk, "Dockerfile"), []byte("ARG base\nFROM ${base}\n\n"), 0755)
+			err = ioutil.WriteFile(filepath.Join("chunks", chk, "Dockerfile"), []byte("ARG base\nFROM ${base}\n\n"), 0755)
 			if err != nil {
 				return
 			}
 
 			err = os.Mkdir("tests", 0755)
-			if err != nil && !os.IsNotExist(err) {
+			if err != nil && !os.IsExist(err) {
 				return
 			}
 			err = ioutil.WriteFile(fmt.Sprintf("tests/%s.yaml", chk), []byte("- desc: \"it should say hello\"\n  command: [\"echo\", \"hello\"]\n  assert:\n  - status == 0\n  - stdout.indexOf(\"hello\") != -1\n  - stderr.length == 0"), 0755)
@@ -90,5 +90,5 @@ combinations:
 }
 
 func init() {
-	rootCmd.AddCommand(initCmd)
+	projectCmd.AddCommand(projectInitCmd)
 }

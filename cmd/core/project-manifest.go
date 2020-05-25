@@ -22,58 +22,69 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"github.com/csweichel/dazzle/pkg/dazzle"
-	"github.com/moby/buildkit/client"
 	"github.com/spf13/cobra"
 )
 
-// buildCmd represents the build command
-var buildCmd = &cobra.Command{
-	Use:   "build <target-ref>",
-	Short: "Builds a Docker image with independent layers",
+var projectManifestCmd = &cobra.Command{
+	Use:   "manifest <target-ref> [chunk]",
+	Short: "prints the manifest of a chunk (or all of them)",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		nocache, _ := cmd.Flags().GetBool("no-cache")
-		plainOutput, _ := cmd.Flags().GetBool("plain-output")
-		cwh, _ := cmd.Flags().GetBool("chunked-without-hash")
-
-		var targetref = args[0]
 		prj, err := dazzle.LoadFromDir(rootCfg.ContextDir)
 		if err != nil {
 			return err
 		}
 
-		cl, err := client.New(context.Background(), rootCfg.BuildkitAddr, client.WithFailFast())
+		sess, err := dazzle.NewSession(nil, args[0], dazzle.WithResolver(getResolver()))
+		if err != nil {
+			return err
+		}
+		err = sess.DownloadBaseInfo(context.Background(), prj)
 		if err != nil {
 			return err
 		}
 
-		session, err := dazzle.NewSession(cl, targetref,
-			dazzle.WithResolver(getResolver()),
-			dazzle.WithNoCache(nocache),
-			dazzle.WithPlainOutput(plainOutput),
-			dazzle.WithChunkedWithoutHash(cwh),
-		)
-		if err != nil {
-			return err
+		var chunks []dazzle.ProjectChunk
+		if len(args[1:]) == 0 {
+			chunks = append(prj.Chunks, prj.Base)
+		} else {
+			for _, c := range args[1:] {
+				if c == "base" {
+					chunks = append(chunks, prj.Base)
+					continue
+				}
+
+				var found bool
+				for _, cs := range prj.Chunks {
+					if cs.Name != c {
+						continue
+					}
+
+					found = true
+					chunks = append(chunks, cs)
+				}
+
+				if !found {
+					return fmt.Errorf("chunk %s not found", c)
+				}
+			}
 		}
 
-		err = prj.Build(context.Background(), session)
-		if err != nil {
-			return err
+		for _, c := range chunks {
+			err = c.PrintManifest(os.Stdout, sess)
+			if err != nil {
+				return err
+			}
 		}
-
-		session.PrintBuildInfo()
 
 		return nil
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(buildCmd)
-
-	buildCmd.Flags().Bool("no-cache", false, "disables the buildkit build cache")
-	buildCmd.Flags().Bool("plain-output", false, "produce plain output")
-	buildCmd.Flags().Bool("chunked-without-hash", false, "disable hash qualification for chunked image")
+	projectCmd.AddCommand(projectManifestCmd)
 }
