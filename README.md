@@ -6,6 +6,8 @@
 
 dazzle is a rather experimental Docker image builder. Its goal is to build independent layers where a change to one layer does *not* invalidate the ones sitting "above" it. To this end, dazzle uses black magic.
 
+**Beware** There's a bit of a [rewrite](https://github.com/csweichel/dazzle/tree/rewrite) going on which makes dazzle about 5x faster, more reliable and less hacky. It also changes the format for dazzle builds, moving from a single Dockerfile to one per "chunk"/layer.
+
 ## How does it work?
 dazzle has three main capabilities.
 1. _build indepedent layers_: dazzle uses a special label in a Docker file to establish "boundaries of independence", or meta layers if you so like. Statements in the form of `LABEL dazzle/layer=somename` establish those bounds. All content prior to the first label is used as base image for the other layers. Come build-time, dazzle will split the Dockerfile at the label statement and build them individually. This prevents accidential cross-talk between the layers.
