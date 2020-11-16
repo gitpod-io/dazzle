@@ -527,7 +527,7 @@ func (df *ParsedDockerfile) Validate() error {
 			}
 		}
 		if tkn.Value == command.Arg {
-			return fmt.Errorf("dazzle does not support build args")
+			log.Warn("dazzle does not support build ARGs (will act like unconfigurable ENV)")
 		}
 	}
 	return nil
