@@ -137,7 +137,7 @@ func LoadProjectConfig(dir string) (*ProjectConfig, error) {
 // LoadFromDir loads a dazzle project from disk
 func LoadFromDir(dir string) (*Project, error) {
 	cfg, err := LoadProjectConfig(dir)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil {
 		return nil, err
 	}
 
