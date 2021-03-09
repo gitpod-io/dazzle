@@ -277,7 +277,7 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 		Type:    chkcfg.RootFS.Type,
 		DiffIDs: chkcfg.RootFS.DiffIDs[n:],
 	}
-	chkcfg.History = chkcfg.History[n:]
+	chkcfg.History = chkcfg.History[len(basecfg.History):]
 	ncfg, err := json.Marshal(chkcfg)
 	if err != nil {
 		return

@@ -41,12 +41,12 @@ var projectAddCombinationCmd = &cobra.Command{
 		}
 
 		name, chunks := args[0], args[1:]
-		for _, comb := range cfg.Combinations {
+		for _, comb := range cfg.Combiner.Combinations {
 			if comb.Name == name {
 				return fmt.Errorf("combination %s exists already", name)
 			}
 		}
-		cfg.Combinations = append(cfg.Combinations, dazzle.ChunkCombination{
+		cfg.Combiner.Combinations = append(cfg.Combiner.Combinations, dazzle.ChunkCombination{
 			Name:   name,
 			Chunks: chunks,
 		})

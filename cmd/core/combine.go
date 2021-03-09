@@ -51,10 +51,10 @@ var combineCmd = &cobra.Command{
 
 		var cs []dazzle.ChunkCombination
 		if all, _ := cmd.Flags().GetBool("all"); all {
-			cs = prj.Config.Combinations
+			cs = prj.Config.Combiner.Combinations
 		} else if cmbn, _ := cmd.Flags().GetString("combination"); cmbn != "" {
 			var found bool
-			for _, c := range prj.Config.Combinations {
+			for _, c := range prj.Config.Combiner.Combinations {
 				if c.Name == cmbn {
 					found = true
 					cs = []dazzle.ChunkCombination{c}
@@ -105,11 +105,6 @@ var combineCmd = &cobra.Command{
 		}
 
 		for _, cmb := range cs {
-			if len(cmb.Chunks) == 0 {
-				log.WithField("name", cmb.Name).Error("combination has no chunks - skipping")
-				continue
-			}
-
 			destref, err := reference.WithTag(targetref, cmb.Name)
 			if err != nil {
 				return fmt.Errorf("cannot produce target reference for chunk %s: %w", cmb.Name, err)
