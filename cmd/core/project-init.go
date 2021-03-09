@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/csweichel/dazzle/pkg/dazzle"
 	"github.com/spf13/cobra"
 )
 
@@ -66,11 +67,13 @@ var projectInitCmd = &cobra.Command{
 			return
 		}
 
+		var cfg dazzle.ProjectConfig
+		err = cfg.Write(".")
 		if err != nil {
 			return
 		}
 
-		fmt.Println("dazzle project initialized - use `dazzle init <chunkname>` to add a chunk")
+		fmt.Println("dazzle project initialized - use `dazzle project init <chunkname>` to add a chunk")
 		return nil
 	},
 }
