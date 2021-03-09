@@ -1,4 +1,8 @@
+
 checkoutLocation: dazzle
 workspaceLocation: dazzle
 tasks:
   - init: go get -v ./...
+vscode:
+  extensions:
+    - golang.go

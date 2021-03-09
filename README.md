@@ -1,4 +1,4 @@
-<img src="logo.png" width="100">
+<img src="logo.png" width="100" style="padding: 1em; background-color: white; border-radius: 10px;">
 
 [![Setup Automated](https://img.shields.io/badge/setup-automated-blue?logo=gitpod)](https://gitpod.io/#https://github.com/csweichel/dazzle)
 [![Go Repord Cart](https://goreportcard.com/badge/github.com/csweichel/dazzle)](https://goreportcard.com/report/github.com/csweichel/dazzle)
