@@ -480,9 +480,10 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 	rchan := make(chan map[string]string, 1)
 	eg.Go(func() error {
 		resp, err := sess.Client.Solve(ctx, nil, client.SolveOpt{
-			Frontend:     "dockerfile.v0",
-			CacheImports: []client.CacheOptionsEntry{cacheImport},
-			CacheExports: []client.CacheOptionsEntry{cacheExport},
+			Frontend:      "dockerfile.v0",
+			CacheImports:  []client.CacheOptionsEntry{cacheImport},
+			CacheExports:  []client.CacheOptionsEntry{cacheExport},
+			FrontendAttrs: make(map[string]string),
 			Session: []session.Attachable{
 				authprovider.NewDockerAuthProvider(os.Stderr),
 			},
