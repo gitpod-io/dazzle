@@ -140,7 +140,7 @@ func (p *Project) Combine(ctx context.Context, chunks []string, dest reference.N
 		allHist = append(allHist, cfgs[i].History...)
 	}
 
-	env, err := mergeEnv(basecfg, cfgs)
+	env, err := mergeEnv(basecfg, cfgs, p.Config.Combiner.EnvVars)
 	if err != nil {
 		return
 	}
@@ -267,7 +267,7 @@ func mergeExposedPorts(base *ociv1.Image, others []*ociv1.Image) map[string]stru
 	return res
 }
 
-func mergeEnv(base *ociv1.Image, others []*ociv1.Image) ([]string, error) {
+func mergeEnv(base *ociv1.Image, others []*ociv1.Image, vars []EnvVarCombination) ([]string, error) {
 	envs := make(map[string]string)
 	for _, e := range base.Config.Env {
 		segs := strings.Split(e, "=")
@@ -285,9 +285,40 @@ func mergeEnv(base *ociv1.Image, others []*ociv1.Image) ([]string, error) {
 			}
 
 			k, v := segs[0], segs[1]
-			if ov, ok := envs[k]; ok {
-				ov += ":" + v
-				envs[k] = ov
+			if ov, exists := envs[k]; exists {
+				action := EnvVarCombineUseFirst
+				for _, mv := range vars {
+					if mv.Name == k {
+						action = mv.Action
+						break
+					}
+				}
+
+				switch action {
+				case EnvVarCombineUseFirst:
+					// do nothing here - value already exists
+				case EnvVarCombineUseLast:
+					envs[k] = v
+				case EnvVarCombineMerge:
+					envs[k] += ":" + v
+				case EnvVarCombineMergeUnique:
+					vs := make(map[string]struct{})
+					for _, s := range strings.Split(ov, ":") {
+						vs[s] = struct{}{}
+					}
+					vs[v] = struct{}{}
+					vss := make([]string, 0, len(vs))
+					for s := range vs {
+						vss = append(vss, s)
+					}
+					envs[k] = strings.Join(vss, ":")
+				}
+				log.WithFields(log.Fields{
+					"action":    action,
+					"name":      k,
+					"new-value": envs[k],
+				}).Info("merged environment variable")
+
 				continue
 			}
 			envs[k] = v

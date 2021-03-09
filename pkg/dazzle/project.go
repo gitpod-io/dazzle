@@ -40,8 +40,11 @@ import (
 
 // ProjectConfig is the structure of a project's dazzle.yaml
 type ProjectConfig struct {
-	Combinations []ChunkCombination `yaml:"combinations"`
-	ChunkIgnore  []string           `yaml:"ignore"`
+	Combiner struct {
+		Combinations []ChunkCombination  `yaml:"combinations"`
+		EnvVars      []EnvVarCombination `yaml:"envvars"`
+	} `yaml:"combiner"`
+	ChunkIgnore []string `yaml:"ignore"`
 
 	chunkIgnores *ignore.GitIgnore
 }
@@ -51,6 +54,26 @@ type ChunkCombination struct {
 	Name   string   `yaml:"name"`
 	Chunks []string `yaml:"chunks"`
 }
+
+// EnvVarCombination describes how env vars are combined
+type EnvVarCombination struct {
+	Name   string                  `yaml:"name"`
+	Action EnvVarCombinationAction `yaml:"action"`
+}
+
+// EnvVarCombinationAction defines mode by which an env var is combined
+type EnvVarCombinationAction string
+
+const (
+	// EnvVarCombineMerge means values are appended with :
+	EnvVarCombineMerge EnvVarCombinationAction = "merge"
+	// EnvVarCombineMergeUnique is like EnvVarCombineMerge but with unique values only
+	EnvVarCombineMergeUnique EnvVarCombinationAction = "merge-unique"
+	// EnvVarCombineUseLast means the last value wins
+	EnvVarCombineUseLast EnvVarCombinationAction = "use-last"
+	// EnvVarCombineUseFirst means the first value wins
+	EnvVarCombineUseFirst EnvVarCombinationAction = "use-first"
+)
 
 // Write writes this config as YAML to a file
 func (pc *ProjectConfig) Write(dir string) error {
