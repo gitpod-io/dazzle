@@ -131,7 +131,7 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 		session.opts.CacheRef = baseref
 	}
 
-	log.WithField("ref", baseref.String()).Warn("building base iamge")
+	log.WithField("ref", baseref.String()).Warn("building base image")
 	absbaseref, err := p.Base.buildAsBase(ctx, baseref, session)
 	if err != nil {
 		return fmt.Errorf("cannot build base image: %w", err)
@@ -284,12 +284,15 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 	}
 
 	chkmf.Config = ociv1.Descriptor{
-		MediaType: chkmf.Config.MediaType,
+		MediaType: ociv1.MediaTypeImageConfig,
 		Digest:    digest.FromBytes(ncfg),
 		Platform:  chkmf.Config.Platform,
 		Size:      int64(len(ncfg)),
 	}
 	chkmf.Layers = chkmf.Layers[len(basemf.Layers):]
+	for i := range chkmf.Layers {
+		chkmf.Layers[i].MediaType = ociv1.MediaTypeImageLayerGzip
+	}
 	nmf, err := json.Marshal(chkmf)
 	if err != nil {
 		return
