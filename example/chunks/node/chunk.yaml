@@ -1,0 +1,4 @@
+variants:
+  - name: "14.17.0"
+    args:
+      NODE_VERSION: 14.17.0

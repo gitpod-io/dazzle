@@ -2,7 +2,8 @@ combiner:
   combinations:
   - name: all
     chunks:
-    - golang
-    - node
-  envvars: []
-ignore: []
+    - golang:1.16.4
+    - node:14.17.0
+  envvars:
+    - name: PATH
+      action: merge-unique
