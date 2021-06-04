@@ -301,7 +301,7 @@ func (p *ProjectChunk) ImageName(tpe ChunkImageType, sess *BuildSession) (refere
 	}
 
 	if tpe == ImageTypeChunkedNoHash {
-		return reference.WithTag(sess.Dest, fmt.Sprintf("%s", p.Name))
+		return reference.WithTag(sess.Dest, p.Name)
 	}
 
 	hash, err := p.hash(sess.baseRef.String())

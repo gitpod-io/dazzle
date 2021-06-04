@@ -330,7 +330,11 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 		err = fmt.Errorf("cannot push image config: %w", err)
 		return
 	} else {
-		cfgw.Write(ncfg)
+		_, err = cfgw.Write(ncfg)
+		if err != nil {
+			err = fmt.Errorf("cannot write image config: %w", err)
+			return
+		}
 		err = cfgw.Commit(ctx, chkmf.Config.Size, chkmf.Config.Digest)
 		if err != nil && !errdefs.IsAlreadyExists(err) {
 			err = fmt.Errorf("cannot push image config: %w", err)
@@ -356,7 +360,11 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 		err = fmt.Errorf("cannot push image manifest: %w", err)
 		return
 	} else {
-		mfw.Write(nmf)
+		_, err = mfw.Write(nmf)
+		if err != nil {
+			err = fmt.Errorf("cannot write image: %w", err)
+			return
+		}
 		err = mfw.Commit(ctx, mfdesc.Size, mfdesc.Digest)
 		if err != nil && !errdefs.IsAlreadyExists(err) {
 			err = fmt.Errorf("cannot push image: %w", err)
