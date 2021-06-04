@@ -205,13 +205,22 @@ func (p *Project) Combine(ctx context.Context, chunks []string, dest reference.N
 	if err != nil {
 		return
 	}
-	ccfgw.Write(serializedCcfg)
+	_, err = ccfgw.Write(serializedCcfg)
+	if err != nil {
+		return
+	}
 	err = ccfgw.Commit(ctx, cmf.Config.Size, cmf.Config.Digest)
 	if err != nil {
 		return
 	}
 	mfw, err := pusher.Push(ctx, cmfdesc)
-	mfw.Write(serializedMf)
+	if err != nil {
+		return
+	}
+	_, err = mfw.Write(serializedMf)
+	if err != nil {
+		return
+	}
 	err = mfw.Commit(ctx, int64(len(serializedMf)), cmfdesc.Digest)
 	if err != nil {
 		return err

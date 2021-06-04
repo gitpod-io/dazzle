@@ -143,13 +143,11 @@ func (LocalExecutor) Run(ctx context.Context, s *Spec) (res *RunResult, err erro
 		}
 	}
 	err = cmd.Wait()
-	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			// the command exited with non-zero exit code - that's no reason to fail here
-			err = nil
-		} else {
-			return nil, err
-		}
+	if _, ok := err.(*exec.ExitError); ok {
+		// the command exited with non-zero exit code - that's no reason to fail here
+		err = nil
+	} else {
+		return nil, err
 	}
 
 	res = &RunResult{
@@ -234,9 +232,9 @@ func (s *Spec) Run(ctx context.Context, executor Executor) (res *Result) {
 // ValidateAssertions runs the assertions of a test spec against a run result and sets the result appropriately
 func ValidateAssertions(res *Result, assertions []string, runres *RunResult) error {
 	vm := otto.New()
-	vm.Set("stdout", string(runres.Stdout))
-	vm.Set("stderr", string(runres.Stderr))
-	vm.Set("status", runres.StatusCode)
+	_ = vm.Set("stdout", string(runres.Stdout))
+	_ = vm.Set("stderr", string(runres.Stderr))
+	_ = vm.Set("status", runres.StatusCode)
 
 	for _, assertion := range assertions {
 		log.Debugf("- %s", assertion)
