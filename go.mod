@@ -4,7 +4,6 @@ go 1.14
 
 require (
 	github.com/GeertJohan/go.rice v1.0.2
-	github.com/alecthomas/jsonschema v0.0.0-20210413112511-5c9c23bdc720 // indirect
 	github.com/alecthomas/repr v0.0.0-20200325044227-4184120f674c
 	github.com/bmatcuk/doublestar v1.3.0
 	github.com/containerd/console v0.0.0-20191219165238-8375c3424e4d
