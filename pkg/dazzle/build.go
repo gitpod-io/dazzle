@@ -638,15 +638,20 @@ func (p *ProjectChunk) buildImage(ctx context.Context, tpe ChunkImageType, sess 
 		cacheExports = []client.CacheOptionsEntry{}
 	}
 
+	attrs := map[string]string{
+		"build-arg:base": sess.baseRef.String(),
+	}
+	for k, v := range p.Args {
+		attrs["build-arg:"+k] = v
+	}
+
 	rchan := make(chan map[string]string, 1)
 	eg.Go(func() error {
 		resp, err := sess.Client.Solve(ctx, nil, client.SolveOpt{
-			Frontend: "dockerfile.v0",
-			FrontendAttrs: map[string]string{
-				"build-arg:base": sess.baseRef.String(),
-			},
-			CacheImports: cacheImports,
-			CacheExports: cacheExports,
+			Frontend:      "dockerfile.v0",
+			FrontendAttrs: attrs,
+			CacheImports:  cacheImports,
+			CacheExports:  cacheExports,
 			Session: []session.Attachable{
 				authprovider.NewDockerAuthProvider(os.Stderr),
 			},
