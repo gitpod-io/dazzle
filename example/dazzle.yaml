@@ -1,0 +1,8 @@
+combiner:
+  combinations:
+  - name: all
+    chunks:
+    - golang
+    - node
+  envvars: []
+ignore: []
