@@ -4,7 +4,19 @@ image:
 checkoutLocation: dazzle
 workspaceLocation: dazzle
 tasks:
+  - command: sudo buildkitd --group gitpod
+  - command: docker run -p 5000:5000 registry:2
+    openMode: split-right
   - init: go get -v ./...
+    openMode: tab-after
+    command: |
+      gp await-port 5000
+      go generate -v ./...
+      go run main.go build --context example localhost:5000/dazzle
+ports:
+  - port: 5000
+    visibility: private
+    onOpen: ignore
 vscode:
   extensions:
     - golang.go
