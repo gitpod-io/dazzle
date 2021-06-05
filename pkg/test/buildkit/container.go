@@ -57,7 +57,7 @@ func (b *Executor) Run(ctx context.Context, spec *test.Spec) (rr *test.RunResult
 		File(llb.Mkfile("/dazzle/runner", 0777, rb)).
 		Run(llb.Args(append([]string{"/dazzle/runner"}, espec...)), llb.IgnoreCache).
 		Root().
-		Marshal()
+		Marshal(ctx)
 	if err != nil {
 		return
 	}
