@@ -146,7 +146,7 @@ func LoadProjectConfig(dir fs.FS) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("cannot load config from %s: %w", cfgfn, err)
 	}
 
-	cfg.chunkIgnores, err = ignore.CompileIgnoreLines(cfg.ChunkIgnore...)
+	cfg.chunkIgnores = ignore.CompileIgnoreLines(cfg.ChunkIgnore...)
 	if err != nil {
 		return nil, fmt.Errorf("cannot load config from %s: %w", cfgfn, err)
 	}
