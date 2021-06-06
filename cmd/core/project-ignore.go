@@ -33,7 +33,7 @@ var projectIgnoreCmd = &cobra.Command{
 	Short: "adds a chunk to the ignore list",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := dazzle.LoadProjectConfig(rootCfg.ContextDir)
+		cfg, err := dazzle.LoadProjectConfig(os.DirFS(rootCfg.ContextDir))
 		if os.IsNotExist(err) {
 			cfg = &dazzle.ProjectConfig{}
 		} else if err != nil {

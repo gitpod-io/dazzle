@@ -27,6 +27,112 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+func TestLoadChunk(t *testing.T) {
+	type Expectation struct {
+		Err    string
+		Chunks []ProjectChunk
+	}
+	var tests = []struct {
+		Name       string
+		FS         map[string]*fstest.MapFile
+		Base       string
+		Chunk      string
+		Expecation Expectation
+	}{
+		{
+			Name:  "load base",
+			Chunk: "base",
+			FS: map[string]*fstest.MapFile{
+				"base/Dockerfile": {
+					Data: []byte("FROM alpine"),
+				},
+			},
+			Expecation: Expectation{
+				Chunks: []ProjectChunk{
+					{
+						Name:        "base",
+						ContextPath: "base",
+						Dockerfile:  []byte("FROM alpine"),
+					},
+				},
+			},
+		},
+		{
+			Name:  "load chunk",
+			Base:  "chunks",
+			Chunk: "foobar",
+			FS: map[string]*fstest.MapFile{
+				"chunks/foobar/Dockerfile": {
+					Data: []byte("FROM alpine"),
+				},
+			},
+			Expecation: Expectation{
+				Chunks: []ProjectChunk{
+					{
+						Name:        "foobar",
+						ContextPath: "chunks/foobar",
+						Dockerfile:  []byte("FROM alpine"),
+					},
+				},
+			},
+		},
+		{
+			Name:  "load variant chunk",
+			Base:  "chunks",
+			Chunk: "foobar",
+			FS: map[string]*fstest.MapFile{
+				"chunks/foobar/Dockerfile": {
+					Data: []byte("FROM foobar"),
+				},
+				"chunks/foobar/OtherDockerfile": {
+					Data: []byte("FROM other"),
+				},
+				"chunks/foobar/chunk.yaml": {
+					Data: []byte("variants:\n  - name: v1\n    args:\n      FOO: bar\n  - name: v2\n    args:\n      FOO: baz\n  - name: v3\n    args:\n      FOO: baz\n    dockerfile: OtherDockerfile"),
+				},
+			},
+			Expecation: Expectation{
+				Chunks: []ProjectChunk{
+					{
+						Name:        "foobar:v1",
+						Dockerfile:  []byte("FROM foobar"),
+						Args:        map[string]string{"FOO": "bar"},
+						ContextPath: "chunks/foobar",
+					},
+					{
+						Name:        "foobar:v2",
+						Dockerfile:  []byte("FROM foobar"),
+						Args:        map[string]string{"FOO": "baz"},
+						ContextPath: "chunks/foobar",
+					},
+					{
+						Name:        "foobar:v3",
+						Dockerfile:  []byte("FROM other"),
+						Args:        map[string]string{"FOO": "baz"},
+						ContextPath: "chunks/foobar",
+					},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			chk, err := loadChunks(fstest.MapFS(test.FS), "", test.Base, test.Chunk)
+			var act Expectation
+			if err != nil {
+				act.Err = err.Error()
+			} else {
+				act.Chunks = chk
+			}
+
+			if diff := cmp.Diff(test.Expecation, act, cmp.AllowUnexported(ProjectChunk{})); diff != "" {
+				t.Errorf("loadChunk() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestResolveCombinations(t *testing.T) {
 	type Expectation struct {
 		Err          string

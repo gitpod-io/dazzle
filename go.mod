@@ -1,6 +1,6 @@
 module github.com/csweichel/dazzle
 
-go 1.14
+go 1.16
 
 require (
 	github.com/GeertJohan/go.rice v1.0.2
@@ -11,6 +11,7 @@ require (
 	github.com/creack/pty v1.1.10
 	github.com/docker/cli v0.0.0-20200227165822-2298e6a3fe24
 	github.com/docker/distribution v0.0.0-20200223014041-6b972e50feee
+	github.com/google/go-cmp v0.5.6
 	github.com/gookit/color v1.2.5
 	github.com/manifoldco/promptui v0.7.0
 	github.com/mattn/go-isatty v0.0.4

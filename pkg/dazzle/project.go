@@ -24,7 +24,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,8 +35,13 @@ import (
 	"github.com/docker/distribution/reference"
 	"github.com/minio/highwayhash"
 	ignore "github.com/sabhiram/go-gitignore"
-	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
+)
+
+const (
+	testsDir     = "tests"
+	chunksDir    = "chunks"
+	chunksYamlFN = "chunk.yaml"
 )
 
 // ProjectConfig is the structure of a project's dazzle.yaml
@@ -53,8 +58,8 @@ type ProjectConfig struct {
 // ChunkCombination combines several chunks to a new image
 type ChunkCombination struct {
 	Name   string   `yaml:"name"`
-	Chunks []string `yaml:"chunks"`
 	Ref    []string `yaml:"ref"`
+	Chunks []string `yaml:"chunks"`
 }
 
 // EnvVarCombination describes how env vars are combined
@@ -124,12 +129,12 @@ type ProjectChunk struct {
 }
 
 // LoadProjectConfig loads a dazzle project config file from disk
-func LoadProjectConfig(dir string) (*ProjectConfig, error) {
+func LoadProjectConfig(dir fs.FS) (*ProjectConfig, error) {
 	var (
 		cfg   ProjectConfig
-		cfgfn = filepath.Join(dir, "dazzle.yaml")
+		cfgfn = "dazzle.yaml"
 	)
-	fd, err := os.Open(cfgfn)
+	fd, err := dir.Open(cfgfn)
 	if err != nil {
 		return nil, err
 	}
@@ -149,8 +154,18 @@ func LoadProjectConfig(dir string) (*ProjectConfig, error) {
 	return &cfg, nil
 }
 
+// LoadFromDirOpts configures LoadFromDir
+type LoadFromDirOpts struct {
+	FS func(dir string) fs.FS
+}
+
 // LoadFromDir loads a dazzle project from disk
-func LoadFromDir(dir string) (*Project, error) {
+func LoadFromDir(contextBase string, opts LoadFromDirOpts) (*Project, error) {
+	if opts.FS == nil {
+		opts.FS = os.DirFS
+	}
+	dir := opts.FS(contextBase)
+
 	cfg, err := LoadProjectConfig(dir)
 	if err != nil {
 		return nil, err
@@ -160,12 +175,7 @@ func LoadFromDir(dir string) (*Project, error) {
 		return nil, err
 	}
 
-	var (
-		testsDir  = filepath.Join(dir, "tests")
-		chunksDir = filepath.Join(dir, "chunks")
-	)
-
-	base, err := loadChunks(dir, testsDir, "base")
+	base, err := loadChunks(dir, contextBase, "", "base")
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +187,7 @@ func LoadFromDir(dir string) (*Project, error) {
 		Config: *cfg,
 		Base:   base[0],
 	}
-	chds, err := ioutil.ReadDir(chunksDir)
+	chds, err := fs.ReadDir(dir, chunksDir)
 	if err != nil {
 		return nil, err
 	}
@@ -193,79 +203,11 @@ func LoadFromDir(dir string) (*Project, error) {
 		if !chd.IsDir() {
 			continue
 		}
-		chunks, err := loadChunks(chunksDir, testsDir, chd.Name())
+		chnk, err := loadChunks(dir, contextBase, chunksDir, chd.Name())
 		if err != nil {
 			return nil, err
 		}
-		res.Chunks = append(res.Chunks, chunks...)
-		for _, c := range chunks {
-			log.WithField("name", c.Name).WithField("args", c.Args).Info("added chunk to project")
-		}
-	}
-
-	return res, nil
-}
-
-func loadChunks(chunkbase, testbase, name string) (res []ProjectChunk, err error) {
-	dir := filepath.Join(chunkbase, name)
-
-	load := func(name string, v ChunkVariant) (ProjectChunk, error) {
-		chk := ProjectChunk{
-			Name:        name,
-			ContextPath: dir,
-			Args:        v.Args,
-		}
-
-		dfn := "Dockerfile"
-		if v.Dockerfile != "" {
-			dfn = v.Dockerfile
-		}
-
-		var err error
-		chk.Dockerfile, err = ioutil.ReadFile(filepath.Join(dir, dfn))
-		if err != nil {
-			return chk, err
-		}
-
-		tf, err := ioutil.ReadFile(filepath.Join(testbase, fmt.Sprintf("%s.yaml", name)))
-		if err != nil && !os.IsNotExist(err) {
-			return chk, fmt.Errorf("%s: cannot read tests.yaml: %w", dir, err)
-		}
-		err = yaml.UnmarshalStrict(tf, &chk.Tests)
-		if err != nil {
-			return chk, fmt.Errorf("%s: cannot read tests.yaml: %w", dir, err)
-		}
-		return chk, nil
-	}
-
-	var (
-		cfgfn = filepath.Join(dir, "chunk.yaml")
-		cfg   ChunkConfig
-	)
-	fd, err := os.Open(cfgfn)
-	if err == nil {
-		defer fd.Close()
-		err = yaml.NewDecoder(fd).Decode(&cfg)
-		if err != nil {
-			return nil, fmt.Errorf("cannot load config from %s: %w", cfgfn, err)
-		}
-	} else if os.IsNotExist(err) {
-		// not a variant chunk
-		chk, err := load(name, ChunkVariant{})
-		if err != nil {
-			return nil, err
-		}
-		return []ProjectChunk{chk}, nil
-	} else {
-		return nil, err
-	}
-
-	for _, v := range cfg.Variants {
-		chk, err := load(fmt.Sprintf("%s:%s", name, v.Name), v)
-		if err != nil {
-			return nil, err
-		}
-		res = append(res, chk)
+		res.Chunks = append(res.Chunks, chnk...)
 	}
 
 	return res, nil
@@ -330,6 +272,74 @@ func resolveCombinations(ipt []ChunkCombination) ([]ChunkCombination, error) {
 	sort.Slice(res, func(i, j int) bool { return res[i].Name < res[j].Name })
 
 	return res, nil
+}
+
+func loadChunks(dir fs.FS, contextBase, base, name string) (res []ProjectChunk, err error) {
+	load := func(name string, v ChunkVariant) (*ProjectChunk, error) {
+		chk := ProjectChunk{
+			Name:        name,
+			ContextPath: filepath.Join(contextBase, base, name),
+			Args:        v.Args,
+		}
+
+		dfn := "Dockerfile"
+		if v.Dockerfile != "" {
+			dfn = v.Dockerfile
+		}
+
+		dockerfn := filepath.Join(name, dfn)
+		if base != "" {
+			dockerfn = filepath.Join(base, name, dfn)
+		}
+
+		var err error
+		chk.Dockerfile, err = fs.ReadFile(dir, dockerfn)
+		if err != nil {
+			return nil, err
+		}
+
+		tf, err := fs.ReadFile(dir, filepath.Join(testsDir, fmt.Sprintf("%s.yaml", name)))
+		if os.IsNotExist(err) {
+			// no tests - we're good
+			return &chk, nil
+		} else if err != nil {
+			return nil, fmt.Errorf("%s: cannot read tests.yaml: %w", dir, err)
+		}
+		err = yaml.UnmarshalStrict(tf, &chk.Tests)
+		if err != nil {
+			return &chk, fmt.Errorf("%s: cannot read tests.yaml: %w", dir, err)
+		}
+		return &chk, nil
+	}
+
+	fd, err := dir.Open(filepath.Join(base, name, chunksYamlFN))
+	if err == nil {
+		defer fd.Close()
+		var cfg ChunkConfig
+		err = yaml.NewDecoder(fd).Decode(&cfg)
+		if err != nil {
+			return nil, fmt.Errorf("cannot load config from %s: %w", chunksYamlFN, err)
+		}
+
+		for _, v := range cfg.Variants {
+			chk, err := load(name, v)
+			if err != nil {
+				return nil, err
+			}
+			chk.Name = fmt.Sprintf("%s:%s", name, v.Name)
+			res = append(res, *chk)
+		}
+		return res, nil
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	// not a variant chunk
+	chk, err := load(name, ChunkVariant{})
+	if err != nil {
+		return nil, err
+	}
+	return []ProjectChunk{*chk}, nil
 }
 
 func (p *ProjectChunk) hash(baseref string) (res string, err error) {

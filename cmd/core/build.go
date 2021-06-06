@@ -39,7 +39,7 @@ var buildCmd = &cobra.Command{
 		cwh, _ := cmd.Flags().GetBool("chunked-without-hash")
 
 		var targetref = args[0]
-		prj, err := dazzle.LoadFromDir(rootCfg.ContextDir)
+		prj, err := dazzle.LoadFromDir(rootCfg.ContextDir, dazzle.LoadFromDirOpts{})
 		if err != nil {
 			return err
 		}
