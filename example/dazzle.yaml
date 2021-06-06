@@ -1,0 +1,6 @@
+combiner:
+  combinations:
+    - name: example
+      chunks:
+        - golang
+        - node

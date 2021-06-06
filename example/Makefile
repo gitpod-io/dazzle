@@ -1,13 +1,16 @@
-DAZZLE=dazzle
-CACHE_REF=hub.docker.io/some-repo
-DEST_REF=hub.docker.io/some-other-repo
+DAZZLE=sudo ./dazzle
+CACHE_REF=localhost:5000/example-cache
+DEST_REF=localhost:5000/example
 BUILDKIT_ADDR=unix:///run/buildkit/buildkitd.sock
 
-.PHONY: chunks combinations
+.PHONY: build chunks combinations
 
-chunks:
+chunks: build
 	${DAZZLE} build --addr ${BUILDKIT_ADDR} --no-cache ${CACHE_REF} .
 
-combinations:
+combinations: build
 	${DAZZLE} combine --addr ${BUILDKIT_ADDR} ${DEST_REF}:all ${CACHE_REF} chunk1 chunk2
 
+# hacky, but keeping it self-contained
+build: 
+	go build ../
