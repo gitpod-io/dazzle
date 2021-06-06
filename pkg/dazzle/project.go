@@ -27,6 +27,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/bmatcuk/doublestar"
@@ -53,6 +54,7 @@ type ProjectConfig struct {
 type ChunkCombination struct {
 	Name   string   `yaml:"name"`
 	Chunks []string `yaml:"chunks"`
+	Ref    []string `yaml:"ref"`
 }
 
 // EnvVarCombination describes how env vars are combined
@@ -150,6 +152,10 @@ func LoadProjectConfig(dir string) (*ProjectConfig, error) {
 // LoadFromDir loads a dazzle project from disk
 func LoadFromDir(dir string) (*Project, error) {
 	cfg, err := LoadProjectConfig(dir)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Combiner.Combinations, err = resolveCombinations(cfg.Combiner.Combinations)
 	if err != nil {
 		return nil, err
 	}
@@ -261,6 +267,67 @@ func loadChunks(chunkbase, testbase, name string) (res []ProjectChunk, err error
 		}
 		res = append(res, chk)
 	}
+
+	return res, nil
+}
+
+func resolveCombinations(ipt []ChunkCombination) ([]ChunkCombination, error) {
+	type Comb struct {
+		Chunks map[string]struct{}
+		Ref    []string
+		Combs  []*Comb
+	}
+	idx := make(map[string]*Comb)
+	for _, c := range ipt {
+		chks := make(map[string]struct{})
+		for _, ck := range c.Chunks {
+			chks[ck] = struct{}{}
+		}
+		idx[c.Name] = &Comb{
+			Ref:    c.Ref,
+			Chunks: chks,
+		}
+	}
+	for n, c := range idx {
+		for _, combn := range c.Ref {
+			comb, ok := idx[combn]
+			if !ok {
+				return nil, fmt.Errorf("unknown combination \"%s\" referenced in \"%s\"", combn, n)
+			}
+			c.Combs = append(c.Combs, comb)
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, c := range idx {
+			for _, comb := range c.Combs {
+				for chk := range comb.Chunks {
+					_, exists := c.Chunks[chk]
+					if exists {
+						continue
+					}
+
+					c.Chunks[chk] = struct{}{}
+					changed = true
+				}
+			}
+		}
+	}
+
+	res := make([]ChunkCombination, 0, len(idx))
+	for n, c := range idx {
+		chunks := make([]string, 0, len(c.Chunks))
+		for chk := range c.Chunks {
+			chunks = append(chunks, chk)
+		}
+		sort.Strings(chunks)
+		res = append(res, ChunkCombination{
+			Name:   n,
+			Chunks: chunks,
+		})
+	}
+
+	sort.Slice(res, func(i, j int) bool { return res[i].Name < res[j].Name })
 
 	return res, nil
 }

@@ -120,6 +120,20 @@ Global Flags:
 Dazzle can combine previously built chunks into a single image. For example `dazzle combine some.registry.com/dazzle --chunks foo=chunk1,chunk2` will combine `base`, `chunk1` and `chunk2` into an image called `some.registry.com/dazzle:foo`.
 One can pre-register such chunk combinations using `dazzle project add-combination`.
 
+The `dazzle.yaml` file specifies the list of available combinations. Those combinations can also reference each other:
+```yaml
+combiner:
+  combinations:
+  - name: minimal
+    chunks:
+    - golang
+  - name: some-more
+    ref:
+    - minimal
+    chunks:
+    - node
+```
+
 ### Testing layers and merged images
 During a dazzle build one can test the individual layers and the final image.
 During the build dazzle will execute the layer tests for each individual layer, as well as the final image.
