@@ -38,7 +38,7 @@ var combineCmd = &cobra.Command{
 	Short: "Combines previously built chunks into a single image",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		prj, err := dazzle.LoadFromDir(rootCfg.ContextDir)
+		prj, err := dazzle.LoadFromDir(rootCfg.ContextDir, dazzle.LoadFromDirOpts{})
 		if err != nil {
 			return err
 		}
@@ -64,7 +64,7 @@ var combineCmd = &cobra.Command{
 			if !found {
 				return fmt.Errorf("combination %s not found", cmbn)
 			}
-		} else if chunks, _ := cmd.Flags().GetString("chunks"); chunks == "" {
+		} else if chunks, _ := cmd.Flags().GetString("chunks"); chunks != "" {
 			segs := strings.Split(chunks, "=")
 			if len(segs) != 2 {
 				return fmt.Errorf("chunks have invalid format")

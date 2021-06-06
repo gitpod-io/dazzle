@@ -34,7 +34,7 @@ var projectManifestCmd = &cobra.Command{
 	Short: "prints the manifest of a chunk (or all of them)",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		prj, err := dazzle.LoadFromDir(rootCfg.ContextDir)
+		prj, err := dazzle.LoadFromDir(rootCfg.ContextDir, dazzle.LoadFromDirOpts{})
 		if err != nil {
 			return err
 		}

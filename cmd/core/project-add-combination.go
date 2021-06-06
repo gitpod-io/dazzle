@@ -33,7 +33,7 @@ var projectAddCombinationCmd = &cobra.Command{
 	Short: "adds a combination to a project",
 	Args:  cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := dazzle.LoadProjectConfig(rootCfg.ContextDir)
+		cfg, err := dazzle.LoadProjectConfig(os.DirFS(rootCfg.ContextDir))
 		if os.IsNotExist(err) {
 			cfg = &dazzle.ProjectConfig{}
 		} else if err != nil {
