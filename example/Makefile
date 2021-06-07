@@ -13,7 +13,10 @@ combinations: build
 
 # hacky, but keeping it self-contained
 build: 
-	go generate ../... && go build ../
+	go build ../
+
+gen: 
+	go generate ../... 
 
 clean: 
 	rm -f ./dazzle

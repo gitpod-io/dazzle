@@ -552,25 +552,22 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 }
 
 func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef reference.NamedTagged, didBuild bool, err error) {
+	// TODO(rl): consider not allowing a build without tests?
 	if !sess.opts.NoTests && len(p.Tests) > 0 {
-		// build temp image for testing
-		testRef, didBuild, err := p.buildImage(ctx, ImageTypeTest, sess)
+		testRef, err := p.testBuild(ctx, sess)
+		if err != nil {
+			return nil, false, err
+		}
+		_, _, imgcfg, err := getImageMetadata(ctx, testRef, sess.opts.Resolver)
 		if err != nil {
 			return nil, false, err
 		}
 
-		if didBuild {
-			_, _, imgcfg, err := getImageMetadata(ctx, testRef, sess.opts.Resolver)
-			if err != nil {
-				return nil, false, err
-			}
-
-			log.WithField("chunk", p.Name).Warn("running tests")
-			executor := buildkit.NewExecutor(sess.Client, testRef.String(), imgcfg)
-			_, ok := test.RunTests(ctx, executor, p.Tests)
-			if !ok {
-				return nil, false, fmt.Errorf("%s: tests failed", p.Name)
-			}
+		log.WithField("chunk", p.Name).Warn("running tests")
+		executor := buildkit.NewExecutor(sess.Client, testRef.String(), imgcfg)
+		_, ok := test.RunTests(ctx, executor, p.Tests)
+		if !ok {
+			return nil, false, fmt.Errorf("%s: tests failed", p.Name)
 		}
 	}
 
@@ -597,6 +594,27 @@ func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef re
 
 	sess.recordChunk(chkRef.String(), mf)
 
+	return
+}
+
+func (p *ProjectChunk) testBuild(ctx context.Context, sess *BuildSession) (testRef reference.Named, err error) {
+	// build temp image for testing
+	testRef, _, err = p.buildImage(ctx, ImageTypeTest, sess)
+	if err != nil {
+		return
+	}
+
+	_, _, imgcfg, err := getImageMetadata(ctx, testRef, sess.opts.Resolver)
+	if err != nil {
+		return nil, err
+	}
+
+	log.WithField("chunk", p.Name).Warn("running tests")
+	executor := buildkit.NewExecutor(sess.Client, testRef.String(), imgcfg)
+	_, ok := test.RunTests(ctx, executor, p.Tests)
+	if !ok {
+		return nil, fmt.Errorf("%s: tests failed", p.Name)
+	}
 	return
 }
 

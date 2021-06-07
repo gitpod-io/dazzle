@@ -46,7 +46,7 @@ func (b *Executor) Run(ctx context.Context, spec *test.Spec) (rr *test.RunResult
 	state := llb.Image(b.ref)
 	if user := b.cfg.Config.User; user != "" {
 		state = state.User(user)
-		log.WithField("user", user).Debug("runnig test as user")
+		log.WithField("user", user).Debug("running test as user")
 	}
 	for _, e := range b.cfg.Config.Env {
 		segs := strings.Split(e, "=")

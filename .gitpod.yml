@@ -10,7 +10,7 @@ tasks:
       wget -c https://github.com/moby/buildkit/releases/download/v0.8.3/buildkit-v0.8.3.linux-amd64.tar.gz  -O - | tar -xz -C /workspace/
       rm /tmp/.init-lock
     name: buildkitd
-    command: sudo /workspace/bin/buildkitd
+    command: sudo /workspace/bin/buildkitd --group gitpod
   - init: sleep 1 && while [ -f /tmp/.init-lock ]; do sleep 1; done
     openMode: tab-after
     command: docker run --rm -d -p 5000:5000 --name registry registry:2
