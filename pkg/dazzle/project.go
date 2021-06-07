@@ -239,7 +239,12 @@ func resolveCombinations(ipt []ChunkCombination) ([]ChunkCombination, error) {
 			c.Combs = append(c.Combs, comb)
 		}
 	}
-	for changed := true; changed; {
+
+	var (
+		changed    = true
+		iterations = len(idx) + 1
+	)
+	for ; changed && iterations >= 0; iterations-- {
 		changed = false
 		for _, c := range idx {
 			for _, comb := range c.Combs {
@@ -254,6 +259,9 @@ func resolveCombinations(ipt []ChunkCombination) ([]ChunkCombination, error) {
 				}
 			}
 		}
+	}
+	if changed && iterations == 0 {
+		return nil, fmt.Errorf("could not resolve inter-combination references - there's probably a cyclic reference somewhere")
 	}
 
 	res := make([]ChunkCombination, 0, len(idx))

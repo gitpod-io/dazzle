@@ -213,6 +213,30 @@ func TestResolveCombinations(t *testing.T) {
 				Err: `unknown combination "not-found" referenced in "a"`,
 			},
 		},
+		{
+			Name: "cyclic combination ref",
+			Input: []ChunkCombination{
+				{Name: "a", Chunks: []string{"a0"}, Ref: []string{"b"}},
+				{Name: "b", Chunks: []string{"b0"}, Ref: []string{"c"}},
+				{Name: "c", Chunks: []string{"c0"}, Ref: []string{"a"}},
+			},
+			Expecation: Expectation{
+				Combinations: []ChunkCombination{
+					{Name: "a", Chunks: []string{"a0", "b0", "c0"}},
+					{Name: "b", Chunks: []string{"a0", "b0", "c0"}},
+					{Name: "c", Chunks: []string{"a0", "b0", "c0"}},
+				},
+			},
+		},
+		{
+			Name: "cyclic self ref",
+			Input: []ChunkCombination{
+				{Name: "a", Chunks: []string{"a0"}, Ref: []string{"a"}},
+			},
+			Expecation: Expectation{
+				Combinations: []ChunkCombination{{Name: "a", Chunks: []string{"a0"}}},
+			},
+		},
 	}
 
 	for _, test := range tests {
