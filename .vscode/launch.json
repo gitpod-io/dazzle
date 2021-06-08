@@ -1,0 +1,32 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Dazzle example build",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${fileWorkspaceFolder}",
+            "args": [
+                "build",
+                "--addr",
+                "unix:///run/buildkit/buildkitd.sock",
+                "--no-cache",
+                "--context",
+                "example",
+                "localhost:5000/dazzle",
+                "."
+            ]
+        },
+        {
+            "name": "Dazzle runner",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${fileWorkspaceFolder}/pkg/test/runner/main.go",
+            "args": [
+                "eyJEZXNjIjoiaXQgc2hvdWxkIGhhdmUgR28gaW4gdmVyc2lvbiAxLjEzIiwiU2tpcCI6ZmFsc2UsIlVzZXIiOiIiLCJDb21tYW5kIjpbImdvIiwidmVyc2lvbiJdLCJFbnRyeXBvaW50IjpudWxsLCJFbnYiOm51bGwsIkFzc2VydGlvbnMiOlsic3Rkb3V0LmluZGV4T2YoXCJnbzEuMTFcIikgIT0gLTEiXX0="
+            ]
+        }
+    ]
+}
