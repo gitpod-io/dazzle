@@ -416,11 +416,14 @@ func (p *ProjectChunk) manifest(baseref string, out io.Writer) (err error) {
 		res = append(res, fmt.Sprintf("%s:%s", strings.TrimPrefix(src, p.ContextPath), hex.EncodeToString(hash.Sum(nil))))
 	}
 
+	tests, _ := yaml.Marshal(p.Tests)
+
 	if baseref != "" {
 		fmt.Fprintf(out, "Baseref: %s\n", baseref)
 	}
 	fmt.Fprintf(out, "Dockerfile: %s\n", string(p.Dockerfile))
 	fmt.Fprintf(out, "Sources:\n%s\n", strings.Join(res, "\n"))
+	fmt.Fprintf(out, "Tests:\n%s\n", string(tests))
 	return nil
 }
 
