@@ -5,7 +5,7 @@ checkoutLocation: dazzle
 workspaceLocation: dazzle
 tasks:
   - command: sudo buildkitd --group gitpod
-  - command: docker run -p 5000:5000 registry:2
+  - command: docker run -p 5000:5000 --name registry --rm registry:2
     openMode: split-right
   - init: go get -v ./...
     openMode: tab-after
