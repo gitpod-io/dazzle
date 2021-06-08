@@ -1,7 +1,7 @@
 <img src="logo.png" width="100" style="padding: 1em; background-color: white; border-radius: 10px;">
 
 [![Setup Automated](https://img.shields.io/badge/setup-automated-blue?logo=gitpod)](https://gitpod.io/#https://github.com/csweichel/dazzle)
-[![Go Repord Cart](https://goreportcard.com/badge/github.com/csweichel/dazzle)](https://goreportcard.com/report/github.com/csweichel/dazzle)
+[![Go Report Card](https://goreportcard.com/badge/github.com/csweichel/dazzle)](https://goreportcard.com/report/github.com/csweichel/dazzle)
 [![Stability: Experimental](https://masterminds.github.io/stability/experimental.svg)](https://masterminds.github.io/stability/experimental.html)
 
 dazzle is a rather experimental Docker/OCI image builder. Its goal is to build independent layers where a change to one layer does *not* invalidate the ones sitting "above" it.
@@ -10,20 +10,31 @@ dazzle is a rather experimental Docker/OCI image builder. Its goal is to build i
 
 ## How does it work?
 dazzle has three main capabilities.
-1. _build indepedent layer chunks_: in a dazzle project there's a `chunks/` folder which contains individual Dockerfiles (e.g. `chunks/something/Dockerfile`). These chunk images are built indepedently of each other. All of them share the same base image using a special build argument `${base}`. Dazzle can build the base image (built from `base/Dockerfile`), as well as the chunk images. After each chunk image build dazzle will remove the base image layer from that image, leaving just the layers that were produced by the chunk Dockerfile.
+1. _build independent layer chunks_: in a dazzle project there's a `chunks/` folder which contains individual Dockerfiles (e.g. `chunks/something/Dockerfile`). These chunk images are built independently of each other. All of them share the same base image using a special build argument `${base}`. Dazzle can build the base image (built from `base/Dockerfile`), as well as the chunk images. After each chunk image build dazzle will remove the base image layer from that image, leaving just the layers that were produced by the chunk Dockerfile.
 2. _merge layers into one image_: dazzle can merge multiple OCI images/chunks (not just those built using dazzle) by building a new manifest and image config that pulls the layers/DiffIDs from the individual chunks and the base image they were built from.
-3. _run tests against images_: to ensure that an image is capable of what we think it should be - epecially after merging - dazzle supports simple tests and assertions that run against Docker images.
+3. _run tests against images_: to ensure that an image is capable of what we think it should be - especially after merging - dazzle supports simple tests and assertions that run against Docker images.
 
 ## Would I want to use this?
 Not ordinarily, no. For example, if you're packing your service/app/software/unicorn you're probably better of with a regular Docker image build and well established means for optimizing that one (think multi-stage builds, proper layer ordering).
 
-If however you are building images which consist of a lot of independent "concerns", i.e. chunks that can be strictly seperated, then this might for you.
+If however you are building images which consist of a lot of independent "concerns", i.e. chunks that can be strictly separated, then this might for you.
 For example, if you're building an image that serves as a collection of tools, the layer hierarchy imposed by regular builds doesn't fit so well.
 
 ## Limitations and caveats
-- build args are not suppported at the moment
+- build args are not supported at the moment
 - there are virtually no tests covering this so things might just break
-- consider this alpa-level software
+- consider this alpha-level software
+
+### Requirements
+Install and run [buildkit](https://github.com/moby/buildkit/releases) - currently 0.8.3 - in the background.
+Pull and run a docker registry.
+
+NOTE: if you are running it in Gitpod this is done for you! 
+
+```bash
+sudo su -c "cd /usr; curl -L https://github.com/moby/buildkit/releases/download/v0.8.3/buildkit-v0.8.3.linux-amd64.tar.gz | tar xvz"
+docker run -p 5000:5000 --name registry --rm registry:2
+```
 
 ## Getting started
 ```bash
@@ -169,3 +180,27 @@ Three variables are available in an assertion:
 - `status` contains the exit code of the command/container.
 
 The assertion itself must evaluate to a boolean value, otherwise the test fails.
+
+### Testing approach
+While the test runner is standalone, the linux+amd64 version is embedded into the dazzle binary using [go.rice](https://github.com/GeertJohan/go.rice) and go generate - see [build.sh](./pkg/test/runner/build.sh).
+TODO: use go:embed?
+Note that if you make changes to code in the test runner you will need to re-embed the runner into the binary in order to use it via dazzle.
+```bash
+go generate ./...
+```
+
+The test runner binary is extracted and copied to the generated image where it is run using an encoded JSON version of the test specification - see [container.go](pkg/test/buildkit/container.go).
+The exit code, stdout & stderr are captured and returned for evaluation against the assertions in the test specification.
+
+While of limited practical use, it is *possible* to run the test runner standalone using a base64-encoded JSON blob as a parameter:
+```bash
+$ go run pkg/test/runner/main.go eyJEZXNjIjoiaXQgc2hvdWxkIGhhdmUgR28gaW4gdmVyc2lvbiAxLjEzIiwiU2tpcCI6ZmFsc2UsIlVzZXIiOiIiLCJDb21tYW5kIjpbImdvIiwidmVyc2lvbiJdLCJFbnRyeXBvaW50IjpudWxsLCJFbnYiOm51bGwsIkFzc2VydGlvbnMiOlsic3Rkb3V0LmluZGV4T2YoXCJnbzEuMTFcIikgIT0gLTEiXX0=
+{"Stdout":"Z28gdmVyc2lvbiBnbzEuMTYuNCBsaW51eC9hbWQ2NAo=","Stderr":"","StatusCode":0}
+```
+
+The stdout/err are returned as base64-encoded values.
+They can be extracted using jq e.g.:
+```bash
+$ go run pkg/test/runner/main.go eyJEZXNjIjoiaXQgc2hvdWxkIGhhdmUgR28gaW4gdmVyc2lvbiAxLjEzIiwiU2tpcCI6ZmFsc2UsIlVzZXIiOiIiLCJDb21tYW5kIjpbImdvIiwidmVyc2lvbiJdLCJFbnRyeXBvaW50IjpudWxsLCJFbnYiOm51bGwsIkFzc2VydGlvbnMiOlsic3Rkb3V0LmluZGV4T2YoXCJnbzEuMTFcIikgIT0gLTEiXX0= | jq -r '.Stdout | @base64d'
+go version go1.16.4 linux/amd64
+```
