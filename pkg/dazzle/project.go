@@ -439,6 +439,9 @@ const (
 	ImageTypeChunked ChunkImageType = "chunked"
 	// ImageTypeChunkedNoHash is the chunk image with the base layers removed and no hash in the name
 	ImageTypeChunkedNoHash ChunkImageType = "chunked-wohash"
+
+	// imageTypeTestResult stores the test result of a chunk - for internal use only, not actually a chunk
+	imageTypeTestResult ChunkImageType = "test-result"
 )
 
 // ImageName produces a chunk image name

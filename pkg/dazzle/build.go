@@ -25,7 +25,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"sort"
 
@@ -144,7 +143,12 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 	session.baseBuildFinished(absbaseref, basemf, basecfg)
 
 	for _, chk := range p.Chunks {
-		_, _, err := chk.build(ctx, session)
+		_, err := chk.test(ctx, session)
+		if err != nil {
+			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
+		}
+
+		_, _, err = chk.build(ctx, session)
 		if err != nil {
 			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
 		}
@@ -400,60 +404,12 @@ func copyLayer(ctx context.Context, fetcher remotes.Fetcher, pusher remotes.Push
 }
 
 func getImageMetadata(ctx context.Context, ref reference.Reference, resolver remotes.Resolver) (absref reference.Digested, manifest *ociv1.Manifest, config *ociv1.Image, err error) {
-	_, desc, err := resolver.Resolve(ctx, ref.String())
-	if err != nil {
-		return
-	}
-	fetcher, err := resolver.Fetcher(ctx, ref.String())
-	if err != nil {
-		return
-	}
-
-	// TODO: deal with this when the ref points to an image list rater than the image
-	manifestr, err := fetcher.Fetch(ctx, desc)
-	if err != nil {
-		return
-	}
-	defer manifestr.Close()
-	manifestraw, err := ioutil.ReadAll(manifestr)
-	if err != nil {
-		return
-	}
-	var mf ociv1.Manifest
-	err = json.Unmarshal(manifestraw, &mf)
-	if err != nil {
-		return
-	}
-
-	cfgr, err := fetcher.Fetch(ctx, mf.Config)
-	if err != nil {
-		return
-	}
-	defer cfgr.Close()
-	cfgraw, err := ioutil.ReadAll(cfgr)
-	if err != nil {
-		return
-	}
 	var cfg ociv1.Image
-	err = json.Unmarshal(cfgraw, &cfg)
+	manifest, absref, err = pullFromRegistry(ctx, resolver, ref, &cfg)
 	if err != nil {
-		return
+		return absref, nil, nil, err
 	}
-	manifest = &mf
 	config = &cfg
-
-	if rr, ok := ref.(reference.Digested); ok {
-		absref = rr
-	} else if rr, ok := ref.(reference.Named); ok {
-		absref, err = reference.WithDigest(rr, desc.Digest)
-		if err != nil {
-			return
-		}
-	} else {
-		err = fmt.Errorf("invalid reference type")
-		return
-	}
-
 	return
 }
 
@@ -551,29 +507,52 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 	return resref, nil
 }
 
-func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef reference.NamedTagged, didBuild bool, err error) {
-	if !sess.opts.NoTests && len(p.Tests) > 0 {
-		// build temp image for testing
-		testRef, didBuild, err := p.buildImage(ctx, ImageTypeTest, sess)
-		if err != nil {
-			return nil, false, err
-		}
-
-		if didBuild {
-			_, _, imgcfg, err := getImageMetadata(ctx, testRef, sess.opts.Resolver)
-			if err != nil {
-				return nil, false, err
-			}
-
-			log.WithField("chunk", p.Name).Warn("running tests")
-			executor := buildkit.NewExecutor(sess.Client, testRef.String(), imgcfg)
-			_, ok := test.RunTests(ctx, executor, p.Tests)
-			if !ok {
-				return nil, false, fmt.Errorf("%s: tests failed", p.Name)
-			}
-		}
+func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, err error) {
+	if sess.opts.NoTests || len(p.Tests) == 0 {
+		return true, nil
 	}
 
+	resultRef, err := p.ImageName(imageTypeTestResult, sess)
+	if err != nil {
+		return
+	}
+	r, err := pullTestResult(ctx, sess.opts.Resolver, resultRef)
+	if err != nil && !errdefs.IsNotFound(err) {
+		return
+	}
+	if r != nil && r.Passed {
+		// tests have run before and have passed
+		return true, nil
+	}
+
+	// build temp image for testing
+	testRef, _, err := p.buildImage(ctx, ImageTypeTest, sess)
+	if err != nil {
+		return false, err
+	}
+
+	_, _, imgcfg, err := getImageMetadata(ctx, testRef, sess.opts.Resolver)
+	if err != nil {
+		return false, err
+	}
+
+	log.WithField("chunk", p.Name).Warn("running tests")
+	executor := buildkit.NewExecutor(sess.Client, testRef.String(), imgcfg)
+	_, ok = test.RunTests(ctx, executor, p.Tests)
+	if !ok {
+		return false, fmt.Errorf("%s: tests failed", p.Name)
+	}
+
+	// tests have passed - mark them as such
+	err = pushTestResult(ctx, sess.opts.Resolver, resultRef, StoredTestResult{true})
+	if err != nil && !errdefs.IsAlreadyExists(err) {
+		return true, err
+	}
+
+	return true, nil
+}
+
+func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef reference.NamedTagged, didBuild bool, err error) {
 	// build actual full image
 	fullRef, didBuild, err := p.buildImage(ctx, ImageTypeFull, sess)
 	if err != nil {
