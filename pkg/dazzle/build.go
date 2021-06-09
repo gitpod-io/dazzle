@@ -216,7 +216,7 @@ type BuildSession struct {
 	chunks  map[string]*ociv1.Manifest
 }
 
-type removeOpts struct {
+type removeBaseLayerOpts struct {
 	resolver remotes.Resolver
 	registry Registry
 	baseref reference.Reference
@@ -276,7 +276,7 @@ func (s *BuildSession) baseBuildFinished(ref reference.Digested, mf *ociv1.Manif
 	s.baseCfg = cfg
 }
 
-func removeBaseLayer(ctx context.Context, opts removeOpts) (chkmf *ociv1.Manifest, didbuild bool, err error) {
+func removeBaseLayer(ctx context.Context, opts removeBaseLayerOpts) (chkmf *ociv1.Manifest, didbuild bool, err error) {
 	_, chkmf, chkcfg, err := getImageMetadata(ctx, opts.chunkref, opts.registry)
 	if err != nil {
 		return
@@ -607,7 +607,7 @@ func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef re
 		return
 	}
 	log.WithField("chunk", p.Name).WithField("ref", chkRef).Warn("building chunked image")
-	opts := removeOpts{sess.opts.Resolver, sess.opts.Registry, sess.baseRef, sess.baseMF, sess.baseCfg, fullRef, chkRef}
+	opts := removeBaseLayerOpts{sess.opts.Resolver, sess.opts.Registry, sess.baseRef, sess.baseMF, sess.baseCfg, fullRef, chkRef}
 	mf, didBuild, err := removeBaseLayer(ctx, opts)
 	if err != nil {
 		return
