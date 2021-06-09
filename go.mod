@@ -10,6 +10,7 @@ require (
 	github.com/containerd/console v1.0.2
 	github.com/containerd/containerd v1.5.2
 	github.com/creack/pty v1.1.13
+	github.com/cweill/gotests v1.6.0 // indirect
 	github.com/docker/cli v20.10.7+incompatible
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/google/go-cmp v0.5.4

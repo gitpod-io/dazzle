@@ -121,7 +121,7 @@ func (p *Project) Combine(ctx context.Context, chunks []string, dest reference.N
 			return err
 		}
 		log.WithField("ref", cref.String()).Info("pulling chunk metadata")
-		_, mf, cfg, err := getImageMetadata(ctx, cref, sess.opts.Resolver)
+		_, mf, cfg, err := getImageMetadata(ctx, cref, sess.opts.Registry)
 		if err != nil {
 			return err
 		}
