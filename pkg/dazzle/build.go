@@ -51,6 +51,11 @@ var (
 	hashKey = []byte{0x03, 0x40, 0xf3, 0xc8, 0x94, 0x7c, 0xad, 0x78, 0x75, 0x14, 0x0f, 0x4c, 0x4a, 0xf7, 0xc6, 0x2b, 0x43, 0x13, 0x1d, 0xc2, 0xa8, 0xc7, 0xfc, 0x46, 0x28, 0xf0, 0x68, 0x5e, 0x36, 0x9a, 0x3b, 0x0b}
 )
 
+const (
+	mfAnnotationBaseRef = "dazzle.gitpod.io/base-ref"
+	mfAnnotationEnvVar  = "dazzle.gitpod.io/env-"
+)
+
 type buildOpts struct {
 	CacheRef           reference.Named
 	NoCache            bool
@@ -143,13 +148,13 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 	if len(p.Config.Combiner.EnvVars) > 0 {
 		basemf.Annotations = make(map[string]string)
 		for _, e := range p.Config.Combiner.EnvVars {
-			basemf.Annotations["dazzle.gitpod.io/env-"+e.Name] = string(e.Action)
+			basemf.Annotations[mfAnnotationEnvVar+e.Name] = string(e.Action)
 		}
 
 		err = storeInRegistry(ctx, session.opts.Resolver, baseref, storeInRegistryOptions{
 			Manifest: basemf,
 		})
-		if err != nil {
+		if err != nil && !errdefs.IsAlreadyExists(err) {
 			return fmt.Errorf("cannot modify base manifest: %w", err)
 		}
 	}
@@ -258,7 +263,7 @@ func (s *BuildSession) baseBuildFinished(ref reference.Digested, mf *ociv1.Manif
 	s.baseCfg = cfg
 }
 
-func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *ociv1.Manifest, basecfg *ociv1.Image, chunkref reference.Named, dest reference.NamedTagged) (chkmf *ociv1.Manifest, didbuild bool, err error) {
+func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, baseref reference.Reference, basemf *ociv1.Manifest, basecfg *ociv1.Image, chunkref reference.Named, dest reference.NamedTagged) (chkmf *ociv1.Manifest, didbuild bool, err error) {
 	_, chkmf, chkcfg, err := getImageMetadata(ctx, chunkref, resolver)
 	if err != nil {
 		return
@@ -310,6 +315,10 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 	for i := range chkmf.Layers {
 		chkmf.Layers[i].MediaType = ociv1.MediaTypeImageLayerGzip
 	}
+	if chkmf.Annotations == nil {
+		chkmf.Annotations = make(map[string]string)
+	}
+	chkmf.Annotations[mfAnnotationBaseRef] = baseref.String()
 	nmf, err := json.Marshal(chkmf)
 	if err != nil {
 		return
@@ -582,7 +591,7 @@ func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef re
 		return
 	}
 	log.WithField("chunk", p.Name).WithField("ref", chkRef).Warn("building chunked image")
-	mf, didBuild, err := removeBaseLayer(ctx, sess.opts.Resolver, sess.baseMF, sess.baseCfg, fullRef, chkRef)
+	mf, didBuild, err := removeBaseLayer(ctx, sess.opts.Resolver, sess.baseRef, sess.baseMF, sess.baseCfg, fullRef, chkRef)
 	if err != nil {
 		return
 	}
