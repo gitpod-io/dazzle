@@ -34,10 +34,10 @@ import (
 func TestProjectChunk_test(t *testing.T) {
 	ctx := context.Background()
 	sess, err := NewSession(nil, "localhost:9999/test")
-	sess.opts.Resolver = testResolver{}
 	if err != nil {
 		t.Errorf("could not create session:%v", err)
 	}
+	sess.opts.Resolver = testResolver{}
 
 	type fields struct {
 		Name     string
@@ -141,6 +141,10 @@ func TestProjectChunk_test(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			chks, err := loadChunks(fstest.MapFS(tt.fields.FS), "", tt.fields.Base, tt.fields.Chunk)
+			if err != nil {
+				t.Errorf("could not load chunks:%v", err)
+				return
+			}
 			if len(chks) != 1 {
 				t.Error("can only support 1 chunk")
 				return
