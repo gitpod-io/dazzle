@@ -41,7 +41,7 @@ const (
 
 // Registry provides container registry services
 type Registry interface {
-	Store(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) error 
+	Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Digested, err error)
 	Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error)
 }
 
@@ -60,10 +60,11 @@ type storeInRegistryOptions struct {
 	ConfigMediaType string
 	Manifest        *ociv1.Manifest
 }
-func (r resolverRegistry) Store(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) error {
+
+func (r resolverRegistry) Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Digested, err error) {
 	pusher, err := r.resolver.Pusher(ctx, ref.String())
 	if err != nil {
-		return fmt.Errorf("cannot store in registry: %v", err)
+		return nil, fmt.Errorf("cannot store in registry: %v", err)
 	}
 
 	var mf ociv1.Manifest
@@ -83,7 +84,7 @@ func (r resolverRegistry) Store(ctx context.Context, ref reference.Named, opts s
 	}
 	mfc, err := json.Marshal(mf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	mfdesc := ociv1.Descriptor{
 		MediaType: ociv1.MediaTypeImageManifest,
@@ -96,48 +97,52 @@ func (r resolverRegistry) Store(ctx context.Context, ref reference.Named, opts s
 		if err == nil {
 			n, err := cfgW.Write(opts.Config)
 			if err != nil {
-				return err
+				return nil, err
 			} else if n < len(opts.Config) {
-				return io.ErrShortWrite
+				return nil, io.ErrShortWrite
 			}
 			err = cfgW.Commit(ctx, mf.Config.Size, mf.Config.Digest)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			err = cfgW.Close()
 			if err != nil {
-				return err
+				return nil, err
 			}
 		} else if !errdefs.IsAlreadyExists(err) {
-			return err
+			return nil, err
 		}
 	}
 
 	mfW, err := pusher.Push(ctx, mfdesc)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err == nil {
 		n, err := mfW.Write(mfc)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if n < len(mfc) {
-			return io.ErrShortWrite
+			return nil, io.ErrShortWrite
 		}
 		err = mfW.Commit(ctx, mfdesc.Size, mfdesc.Digest)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		err = mfW.Close()
 		if err != nil {
-			return err
+			return nil, err
 		}
 	} else if !errdefs.IsAlreadyExists(err) {
-		return err
+		return nil, err
 	}
 
-	return nil
+	absref, err = reference.WithDigest(ref, mfdesc.Digest)
+	if err != nil {
+		return nil, err
+	}
+	return absref, nil
 }
 
 func (r resolverRegistry) Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error) {
@@ -200,12 +205,12 @@ type StoredTestResult struct {
 	Passed bool `json:"passed"`
 }
 
-func pushTestResult(ctx context.Context, registry Registry, ref reference.Named, r StoredTestResult) error {
+func pushTestResult(ctx context.Context, registry Registry, ref reference.Named, r StoredTestResult) (absref reference.Digested, err error) {
 	content, err := json.Marshal(r)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return registry.Store(ctx, ref, storeInRegistryOptions{
+	return registry.Push(ctx, ref, storeInRegistryOptions{
 		Config:          content,
 		ConfigMediaType: mediaTypeTestResult,
 	})
