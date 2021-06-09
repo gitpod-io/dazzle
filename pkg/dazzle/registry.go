@@ -39,21 +39,32 @@ const (
 	mediaTypeTestResult = "application/vnd.gitpod.dazzle.tests.v1+json"
 )
 
-func storeInRegistry(ctx context.Context, resolver remotes.Resolver, ref reference.Named, mediaType string, content []byte) error {
+type storeInRegistryOptions struct {
+	Config          []byte
+	ConfigMediaType string
+	Manifest        *ociv1.Manifest
+}
+
+func storeInRegistry(ctx context.Context, resolver remotes.Resolver, ref reference.Named, opts storeInRegistryOptions) error {
 	pusher, err := resolver.Pusher(ctx, ref.String())
 	if err != nil {
 		return fmt.Errorf("cannot store in registry: %v", err)
 	}
 
-	mf := ociv1.Manifest{
-		Versioned: specs.Versioned{
-			SchemaVersion: 2,
-		},
-		Config: ociv1.Descriptor{
-			MediaType: mediaType,
-			Size:      int64(len(content)),
-			Digest:    digest.FromBytes(content),
-		},
+	var mf ociv1.Manifest
+	if opts.Manifest == nil {
+		mf = ociv1.Manifest{
+			Versioned: specs.Versioned{
+				SchemaVersion: 2,
+			},
+			Config: ociv1.Descriptor{
+				MediaType: opts.ConfigMediaType,
+				Size:      int64(len(opts.Config)),
+				Digest:    digest.FromBytes(opts.Config),
+			},
+		}
+	} else {
+		mf = *opts.Manifest
 	}
 	mfc, err := json.Marshal(mf)
 	if err != nil {
@@ -65,24 +76,26 @@ func storeInRegistry(ctx context.Context, resolver remotes.Resolver, ref referen
 		Digest:    digest.FromBytes(mfc),
 	}
 
-	cfgW, err := pusher.Push(ctx, mf.Config)
-	if err == nil {
-		n, err := cfgW.Write(content)
-		if err != nil {
+	if len(opts.Config) > 0 {
+		cfgW, err := pusher.Push(ctx, mf.Config)
+		if err == nil {
+			n, err := cfgW.Write(opts.Config)
+			if err != nil {
+				return err
+			} else if n < len(opts.Config) {
+				return io.ErrShortWrite
+			}
+			err = cfgW.Commit(ctx, mf.Config.Size, mf.Config.Digest)
+			if err != nil {
+				return err
+			}
+			err = cfgW.Close()
+			if err != nil {
+				return err
+			}
+		} else if !errdefs.IsAlreadyExists(err) {
 			return err
-		} else if n < len(content) {
-			return io.ErrShortWrite
 		}
-		err = cfgW.Commit(ctx, mf.Config.Size, mf.Config.Digest)
-		if err != nil {
-			return err
-		}
-		err = cfgW.Close()
-		if err != nil {
-			return err
-		}
-	} else if !errdefs.IsAlreadyExists(err) {
-		return err
 	}
 
 	mfW, err := pusher.Push(ctx, mfdesc)
@@ -94,7 +107,7 @@ func storeInRegistry(ctx context.Context, resolver remotes.Resolver, ref referen
 		if err != nil {
 			return err
 		}
-		if n < len(content) {
+		if n < len(mfc) {
 			return io.ErrShortWrite
 		}
 		err = mfW.Commit(ctx, mfdesc.Size, mfdesc.Digest)
@@ -177,7 +190,10 @@ func pushTestResult(ctx context.Context, resolver remotes.Resolver, ref referenc
 	if err != nil {
 		return err
 	}
-	return storeInRegistry(ctx, resolver, ref, mediaTypeTestResult, content)
+	return storeInRegistry(ctx, resolver, ref, storeInRegistryOptions{
+		Config:          content,
+		ConfigMediaType: mediaTypeTestResult,
+	})
 }
 
 func pullTestResult(ctx context.Context, resolver remotes.Resolver, ref reference.Named) (*StoredTestResult, error) {
