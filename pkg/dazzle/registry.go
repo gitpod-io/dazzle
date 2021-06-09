@@ -39,14 +39,29 @@ const (
 	mediaTypeTestResult = "application/vnd.gitpod.dazzle.tests.v1+json"
 )
 
+// Registry provides container registry services
+type Registry interface {
+	Store(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) error 
+	Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error)
+}
+
+type resolverRegistry struct {
+	resolver remotes.Resolver
+}
+
+func NewResolverRegistry(resolver remotes.Resolver) Registry {
+	return resolverRegistry{
+		resolver: resolver,
+	}
+}
+
 type storeInRegistryOptions struct {
 	Config          []byte
 	ConfigMediaType string
 	Manifest        *ociv1.Manifest
 }
-
-func storeInRegistry(ctx context.Context, resolver remotes.Resolver, ref reference.Named, opts storeInRegistryOptions) error {
-	pusher, err := resolver.Pusher(ctx, ref.String())
+func (r resolverRegistry) Store(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) error {
+	pusher, err := r.resolver.Pusher(ctx, ref.String())
 	if err != nil {
 		return fmt.Errorf("cannot store in registry: %v", err)
 	}
@@ -125,17 +140,17 @@ func storeInRegistry(ctx context.Context, resolver remotes.Resolver, ref referen
 	return nil
 }
 
-func pullFromRegistry(ctx context.Context, resolver remotes.Resolver, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error) {
-	_, desc, err := resolver.Resolve(ctx, ref.String())
+func (r resolverRegistry) Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error) {
+	_, desc, err := r.resolver.Resolve(ctx, ref.String())
 	if err != nil {
 		return
 	}
-	fetcher, err := resolver.Fetcher(ctx, ref.String())
+	fetcher, err := r.resolver.Fetcher(ctx, ref.String())
 	if err != nil {
 		return
 	}
 
-	// TODO: deal with this when the ref points to an image list rater than the image
+	// TODO: deal with this when the ref points to an image list rather than the image
 	manifestr, err := fetcher.Fetch(ctx, desc)
 	if err != nil {
 		return
@@ -185,23 +200,23 @@ type StoredTestResult struct {
 	Passed bool `json:"passed"`
 }
 
-func pushTestResult(ctx context.Context, resolver remotes.Resolver, ref reference.Named, r StoredTestResult) error {
+func pushTestResult(ctx context.Context, registry Registry, ref reference.Named, r StoredTestResult) error {
 	content, err := json.Marshal(r)
 	if err != nil {
 		return err
 	}
-	return storeInRegistry(ctx, resolver, ref, storeInRegistryOptions{
+	return registry.Store(ctx, ref, storeInRegistryOptions{
 		Config:          content,
 		ConfigMediaType: mediaTypeTestResult,
 	})
 }
 
-func pullTestResult(ctx context.Context, resolver remotes.Resolver, ref reference.Named) (*StoredTestResult, error) {
+func pullTestResult(ctx context.Context, registry Registry, ref reference.Named) (*StoredTestResult, error) {
 	var (
 		res StoredTestResult
 		err error
 	)
-	_, _, err = pullFromRegistry(ctx, resolver, ref, &res)
+	_, _, err = registry.Pull(ctx, ref, &res)
 	if err != nil {
 		return nil, err
 	}

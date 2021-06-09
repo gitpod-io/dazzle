@@ -37,7 +37,7 @@ func TestLoadChunk(t *testing.T) {
 		FS         map[string]*fstest.MapFile
 		Base       string
 		Chunk      string
-		Expecation Expectation
+		Expectation Expectation
 	}{
 		{
 			Name:  "load base",
@@ -47,7 +47,7 @@ func TestLoadChunk(t *testing.T) {
 					Data: []byte("FROM alpine"),
 				},
 			},
-			Expecation: Expectation{
+			Expectation: Expectation{
 				Chunks: []ProjectChunk{
 					{
 						Name:        "base",
@@ -66,7 +66,7 @@ func TestLoadChunk(t *testing.T) {
 					Data: []byte("FROM alpine"),
 				},
 			},
-			Expecation: Expectation{
+			Expectation: Expectation{
 				Chunks: []ProjectChunk{
 					{
 						Name:        "foobar",
@@ -91,7 +91,7 @@ func TestLoadChunk(t *testing.T) {
 					Data: []byte("variants:\n  - name: v1\n    args:\n      FOO: bar\n  - name: v2\n    args:\n      FOO: baz\n  - name: v3\n    args:\n      FOO: baz\n    dockerfile: OtherDockerfile"),
 				},
 			},
-			Expecation: Expectation{
+			Expectation: Expectation{
 				Chunks: []ProjectChunk{
 					{
 						Name:        "foobar:v1",
@@ -126,7 +126,7 @@ func TestLoadChunk(t *testing.T) {
 				act.Chunks = chk
 			}
 
-			if diff := cmp.Diff(test.Expecation, act, cmp.AllowUnexported(ProjectChunk{})); diff != "" {
+			if diff := cmp.Diff(test.Expectation, act, cmp.AllowUnexported(ProjectChunk{})); diff != "" {
 				t.Errorf("loadChunk() mismatch (-want +got):\n%s", diff)
 			}
 		})
