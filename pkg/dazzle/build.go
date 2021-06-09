@@ -23,6 +23,7 @@ package dazzle
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -58,6 +59,7 @@ type buildOpts struct {
 	Resolver           remotes.Resolver
 	PlainOutput        bool
 	ChunkedWithoutHash bool
+	Registry Registry
 }
 
 // BuildOpt modifies build behaviour
@@ -80,6 +82,7 @@ func WithCacheRef(ref string) BuildOpt {
 func WithResolver(r remotes.Resolver) BuildOpt {
 	return func(b *buildOpts) error {
 		b.Resolver = r
+		b.Registry = NewResolverRegistry(r)
 		return nil
 	}
 }
@@ -116,6 +119,14 @@ func WithChunkedWithoutHash(enable bool) BuildOpt {
 	}
 }
 
+// WithRegistry makes the builder use a custom registry
+func WithRegistry(r Registry) BuildOpt {
+	return func(b *buildOpts) error {
+		b.Registry = r
+		return nil
+	}
+}
+
 // Build builds all images in a project
 func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 	ctx = clog.WithLogger(ctx, log.NewEntry(log.New()))
@@ -136,7 +147,7 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 		return fmt.Errorf("cannot build base image: %w", err)
 	}
 
-	_, basemf, basecfg, err := getImageMetadata(ctx, absbaseref, session.opts.Resolver)
+	_, basemf, basecfg, err := getImageMetadata(ctx, absbaseref, session.opts.Registry)
 	if err != nil {
 		return fmt.Errorf("cannot fetch base image: %w", err)
 	}
@@ -230,7 +241,7 @@ func (s *BuildSession) DownloadBaseInfo(ctx context.Context, p *Project) (err er
 	}
 	log.WithField("ref", baseref).WithField("dest", s.Dest).Debug("downloading base image info")
 
-	absrefs, mf, cfg, err := getImageMetadata(ctx, baseref, s.opts.Resolver)
+	absrefs, mf, cfg, err := getImageMetadata(ctx, baseref, s.opts.Registry)
 	if err != nil {
 		return err
 	}
@@ -245,8 +256,8 @@ func (s *BuildSession) baseBuildFinished(ref reference.Digested, mf *ociv1.Manif
 	s.baseCfg = cfg
 }
 
-func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *ociv1.Manifest, basecfg *ociv1.Image, chunkref reference.Named, dest reference.NamedTagged) (chkmf *ociv1.Manifest, didbuild bool, err error) {
-	_, chkmf, chkcfg, err := getImageMetadata(ctx, chunkref, resolver)
+func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, registry Registry, basemf *ociv1.Manifest, basecfg *ociv1.Image, chunkref reference.Named, dest reference.NamedTagged) (chkmf *ociv1.Manifest, didbuild bool, err error) {
+	_, chkmf, chkcfg, err := getImageMetadata(ctx, chunkref, registry)
 	if err != nil {
 		return
 	}
@@ -308,7 +319,7 @@ func removeBaseLayer(ctx context.Context, resolver remotes.Resolver, basemf *oci
 		Size:      int64(len(nmf)),
 	}
 
-	if _, dstmf, _, err := getImageMetadata(ctx, dest, resolver); err == nil {
+	if _, dstmf, _, err := getImageMetadata(ctx, dest, registry); err == nil {
 		if dstmf.Config.Digest == chkmf.Config.Digest {
 			// config is already pushed to remote from a previous run.
 			// We just assume that the manifest must be up to date, too and stop here.
@@ -403,9 +414,9 @@ func copyLayer(ctx context.Context, fetcher remotes.Fetcher, pusher remotes.Push
 	return w.Commit(ctx, desc.Size, desc.Digest)
 }
 
-func getImageMetadata(ctx context.Context, ref reference.Reference, resolver remotes.Resolver) (absref reference.Digested, manifest *ociv1.Manifest, config *ociv1.Image, err error) {
+func getImageMetadata(ctx context.Context, ref reference.Reference, registry Registry) (absref reference.Digested, manifest *ociv1.Manifest, config *ociv1.Image, err error) {
 	var cfg ociv1.Image
-	manifest, absref, err = pullFromRegistry(ctx, resolver, ref, &cfg)
+	manifest, absref, err = registry.Pull(ctx, ref, &cfg)
 	if err != nil {
 		return absref, nil, nil, err
 	}
@@ -508,6 +519,9 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 }
 
 func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, err error) {
+	if sess == nil {
+		return false, errors.New("Cannot test without a session")
+	}
 	if sess.opts.NoTests || len(p.Tests) == 0 {
 		return true, nil
 	}
@@ -516,7 +530,7 @@ func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, e
 	if err != nil {
 		return
 	}
-	r, err := pullTestResult(ctx, sess.opts.Resolver, resultRef)
+	r, err := pullTestResult(ctx, sess.opts.Registry, resultRef)
 	if err != nil && !errdefs.IsNotFound(err) {
 		return
 	}
@@ -531,7 +545,7 @@ func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, e
 		return false, err
 	}
 
-	_, _, imgcfg, err := getImageMetadata(ctx, testRef, sess.opts.Resolver)
+	_, _, imgcfg, err := getImageMetadata(ctx, testRef, sess.opts.Registry)
 	if err != nil {
 		return false, err
 	}
@@ -544,7 +558,7 @@ func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, e
 	}
 
 	// tests have passed - mark them as such
-	err = pushTestResult(ctx, sess.opts.Resolver, resultRef, StoredTestResult{true})
+	err = pushTestResult(ctx, sess.opts.Registry, resultRef, StoredTestResult{true})
 	if err != nil && !errdefs.IsAlreadyExists(err) {
 		return true, err
 	}
@@ -569,7 +583,7 @@ func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef re
 		return
 	}
 	log.WithField("chunk", p.Name).WithField("ref", chkRef).Warn("building chunked image")
-	mf, didBuild, err := removeBaseLayer(ctx, sess.opts.Resolver, sess.baseMF, sess.baseCfg, fullRef, chkRef)
+	mf, didBuild, err := removeBaseLayer(ctx, sess.opts.Resolver, sess.opts.Registry, sess.baseMF, sess.baseCfg, fullRef, chkRef)
 	if err != nil {
 		return
 	}
