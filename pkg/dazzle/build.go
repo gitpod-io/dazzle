@@ -140,6 +140,19 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 	if err != nil {
 		return fmt.Errorf("cannot fetch base image: %w", err)
 	}
+	if len(p.Config.Combiner.EnvVars) > 0 {
+		basemf.Annotations = make(map[string]string)
+		for _, e := range p.Config.Combiner.EnvVars {
+			basemf.Annotations["dazzle.gitpod.io/env-"+e.Name] = string(e.Action)
+		}
+
+		err = storeInRegistry(ctx, session.opts.Resolver, baseref, storeInRegistryOptions{
+			Manifest: basemf,
+		})
+		if err != nil {
+			return fmt.Errorf("cannot modify base manifest: %w", err)
+		}
+	}
 	session.baseBuildFinished(absbaseref, basemf, basecfg)
 
 	for _, chk := range p.Chunks {
