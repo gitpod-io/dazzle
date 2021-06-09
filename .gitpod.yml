@@ -10,9 +10,8 @@ tasks:
   - init: go get -v ./...
     openMode: tab-after
     command: |
-      gp await-port 5000
       go generate -v ./...
-      go run main.go build --context example localhost:5000/dazzle
+      echo "Use example.sh to build and test the example"
 ports:
   - port: 5000
     visibility: private
