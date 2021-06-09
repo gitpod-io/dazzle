@@ -64,7 +64,7 @@ type buildOpts struct {
 	Resolver           remotes.Resolver
 	PlainOutput        bool
 	ChunkedWithoutHash bool
-	Registry Registry
+	Registry           Registry
 }
 
 // BuildOpt modifies build behaviour
@@ -130,6 +130,7 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 
 	// Relying on the buildkit cache alone does not result in fixed content hashes.
 	// We must locally build hashes and use them as unique image names.
+	var baseref reference.Named
 	baseref, err := p.BaseRef(session.Dest)
 	if err != nil {
 		return err
@@ -148,17 +149,20 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 	if err != nil {
 		return fmt.Errorf("cannot fetch base image: %w", err)
 	}
-	if len(p.Config.Combiner.EnvVars) > 0 {
+	if session.opts.ChunkedWithoutHash && len(p.Config.Combiner.EnvVars) > 0 {
 		basemf.Annotations = make(map[string]string)
 		for _, e := range p.Config.Combiner.EnvVars {
 			basemf.Annotations[mfAnnotationEnvVar+e.Name] = string(e.Action)
 		}
 
-		err = session.opts.Registry.Store(ctx, baseref, storeInRegistryOptions{
+		aref, err := session.opts.Registry.Push(ctx, baseref, storeInRegistryOptions{
 			Manifest: basemf,
 		})
 		if err != nil && !errdefs.IsAlreadyExists(err) {
 			return fmt.Errorf("cannot modify base manifest: %w", err)
+		}
+		if aref != nil {
+			absbaseref = aref
 		}
 	}
 	session.baseBuildFinished(absbaseref, basemf, basecfg)
@@ -219,11 +223,11 @@ type BuildSession struct {
 type removeBaseLayerOpts struct {
 	resolver remotes.Resolver
 	registry Registry
-	baseref reference.Reference
-	basemf *ociv1.Manifest
-	basecfg *ociv1.Image
+	baseref  reference.Reference
+	basemf   *ociv1.Manifest
+	basecfg  *ociv1.Image
 	chunkref reference.Named
-	dest reference.NamedTagged
+	dest     reference.NamedTagged
 }
 
 // PrintBuildInfo logs information about the built chunks
@@ -544,7 +548,7 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 
 func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, err error) {
 	if sess == nil {
-		return false, errors.New("Cannot test without a session")
+		return false, errors.New("cannot test without a session")
 	}
 	if sess.opts.NoTests || len(p.Tests) == 0 {
 		return true, nil
@@ -582,7 +586,7 @@ func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, e
 	}
 
 	// tests have passed - mark them as such
-	err = pushTestResult(ctx, sess.opts.Registry, resultRef, StoredTestResult{true})
+	_, err = pushTestResult(ctx, sess.opts.Registry, resultRef, StoredTestResult{true})
 	if err != nil && !errdefs.IsAlreadyExists(err) {
 		return true, err
 	}

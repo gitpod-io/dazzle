@@ -180,8 +180,8 @@ type testRegistry struct {
 	testResult *StoredTestResult
 }
 
-func (t testRegistry) Store(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) error {
-	return nil
+func (t testRegistry) Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Digested, err error) {
+	return nil, nil
 }
 
 func (t testRegistry) Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error) {
