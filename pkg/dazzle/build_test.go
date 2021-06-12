@@ -22,22 +22,59 @@ package dazzle
 
 import (
 	"context"
+	"io/fs"
+	"os"
 	"testing"
 	"testing/fstest"
+	"time"
 
+	_ "github.com/bshuster-repo/logrus-logstash-hook"
 	"github.com/containerd/containerd/remotes"
+	"github.com/containerd/containerd/remotes/docker"
+	_ "github.com/distribution/distribution/registry/storage/driver/inmemory"
+	"github.com/docker/distribution/configuration"
 	"github.com/docker/distribution/reference"
+	"github.com/docker/distribution/registry"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+func setupRegistry(ctx context.Context, addr string) (*registry.Registry, error) {
+	config := &configuration.Configuration{}
+	// TODO: this needs to change to something ephemeral as the test will fail if there is any server
+	// already listening on the specified port
+	config.HTTP.Secret = "not_a_secret"
+	config.HTTP.Addr = addr
+	config.HTTP.DrainTimeout = time.Duration(10) * time.Second
+	config.Storage = map[string]configuration.Parameters{"inmemory": map[string]interface{}{}}
+	return registry.NewRegistry(ctx, config)
+}
+
 func TestProjectChunk_test(t *testing.T) {
-	ctx := context.Background()
-	sess, err := NewSession(nil, "localhost:9999/test")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	registry, err := setupRegistry(ctx, "127.0.0.1:5111")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// run registry server
+	var errchan chan error
+	go func() {
+		errchan <- registry.ListenAndServe()
+	}()
+	select {
+	case err = <-errchan:
+		t.Fatalf("Error listening: %v", err)
+	default:
+	}
+
+	sess, err := NewSession(nil, "127.0.0.1:5111/test_projectchunk")
 	if err != nil {
 		t.Errorf("could not create session:%v", err)
 	}
-	sess.opts.Resolver = testResolver{}
+	resolver := docker.NewResolver(docker.ResolverOptions{})
+	reg := NewResolverRegistry(resolver)
+	sess.opts.Resolver = resolver
 
 	type fields struct {
 		Name     string
@@ -58,77 +95,93 @@ func TestProjectChunk_test(t *testing.T) {
 		wantOk  bool
 		wantErr bool
 	}{
+		// 		{
+		// 			name: "passes with no tests",
+		// 			fields: fields{
+		// 				Name:  "no test chunk",
+		// 				Base:  "chunks",
+		// 				Chunk: "notest",
+		// 				FS: map[string]*fstest.MapFile{
+		// 					"chunks/notest/Dockerfile": {
+		// 						Data: []byte("FROM alpine"),
+		// 					},
+		// 				},
+		// 			},
+		// 			args: args{
+		// 				ctx:  ctx,
+		// 				sess: sess,
+		// 			},
+		// 			wantOk:  true,
+		// 			wantErr: false,
+		// 		},
+		// 		{
+		// 			name: "fails when no base reference set",
+		// 			fields: fields{
+		// 				Name:  "no base ref chunk",
+		// 				Base:  "chunks",
+		// 				Chunk: "nobaseref",
+		// 				FS: map[string]*fstest.MapFile{
+		// 					"chunks/nobaseref/Dockerfile": {
+		// 						Data: []byte("FROM alpine"),
+		// 					},
+		// 					"tests/nobaseref.yaml": {
+		// 						Data: []byte(`---
+		// - desc: "it should run ls"
+		//   command: ["ls"]
+		//   assert:
+		//   - "status == 0"
+		// `),
+		// 					},
+		// 				},
+		// 			},
+		// 			args: args{
+		// 				ctx:  ctx,
+		// 				sess: sess,
+		// 			},
+		// 			wantOk:  false,
+		// 			wantErr: true,
+		// 		},
+		// 		{
+		// 			name: "does not build if tests have passed",
+		// 			fields: fields{
+		// 				Name:  "a chunk",
+		// 				Base:  "chunks",
+		// 				Chunk: "foobar",
+		// 				FS: map[string]*fstest.MapFile{
+		// 					"chunks/foobar/Dockerfile": {
+		// 						Data: []byte("FROM alpine"),
+		// 					},
+		// 					"tests/foobar.yaml": {
+		// 						Data: []byte(`---
+		// - desc: "it should run ls"
+		//   command: ["ls"]
+		//   assert:
+		//   - "status == 0"
+		// `),
+		// 					},
+		// 				},
+		// 				Registry: testRegistry{
+		// 					testResult: &StoredTestResult{
+		// 						Passed: true,
+		// 					},
+		// 				},
+		// 				BaseRef: "localhost:5111/test@sha256:b25ab047a146b43a7a1bdd2b3346a05fd27dd2730af8ab06a9b8acca0f15b378",
+		// 			},
+		// 			args: args{
+		// 				ctx:  ctx,
+		// 				sess: sess,
+		// 			},
+		// 			wantOk:  true,
+		// 			wantErr: false,
+		// 		},
 		{
-			name: "passes with no tests",
+			name: "builds if not present",
 			fields: fields{
-				Name:  "no test chunk",
-				Base:  "chunks",
-				Chunk: "notest",
-				FS: map[string]*fstest.MapFile{
-					"chunks/notest/Dockerfile": {
-						Data: []byte("FROM alpine"),
-					},
-				},
-			},
-			args: args{
-				ctx:  ctx,
-				sess: sess,
-			},
-			wantOk:  true,
-			wantErr: false,
-		},
-		{
-			name: "fails when no base reference set",
-			fields: fields{
-				Name:  "no base ref chunk",
-				Base:  "chunks",
-				Chunk: "nobaseref",
-				FS: map[string]*fstest.MapFile{
-					"chunks/nobaseref/Dockerfile": {
-						Data: []byte("FROM alpine"),
-					},
-					"tests/nobaseref.yaml": {
-						Data: []byte(`---
-- desc: "it should run ls"
-  command: ["ls"]
-  assert:
-  - "status == 0"
-`),
-					},
-				},
-			},
-			args: args{
-				ctx:  ctx,
-				sess: sess,
-			},
-			wantOk:  false,
-			wantErr: true,
-		},
-		{
-			name: "does not build if tests have passed",
-			fields: fields{
-				Name:  "a chunk",
-				Base:  "chunks",
-				Chunk: "foobar",
-				FS: map[string]*fstest.MapFile{
-					"chunks/foobar/Dockerfile": {
-						Data: []byte("FROM alpine"),
-					},
-					"tests/foobar.yaml": {
-						Data: []byte(`---
-- desc: "it should run ls"
-  command: ["ls"]
-  assert:
-  - "status == 0"
-`),
-					},
-				},
-				Registry: testRegistry{
-					testResult: &StoredTestResult{
-						Passed: true,
-					},
-				},
-				BaseRef: "localhost:9999/test@sha256:b25ab047a146b43a7a1bdd2b3346a05fd27dd2730af8ab06a9b8acca0f15b378",
+				Name:     "a chunk",
+				Base:     "chunks",
+				Chunk:    "basic",
+				Registry: reg,
+				BaseRef:  "127.0.0.1:5111/test_projectchunk@sha256:b25ab047a146b43a7a1bdd2b3346a05fd27dd2730af8ab06a9b8acca0f15b378",
 			},
 			args: args{
 				ctx:  ctx,
@@ -140,7 +193,17 @@ func TestProjectChunk_test(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			chks, err := loadChunks(fstest.MapFS(tt.fields.FS), "", tt.fields.Base, tt.fields.Chunk)
+			var filesys fs.FS
+			if tt.fields.FS != nil {
+				filesys = fstest.MapFS(tt.fields.FS)
+			} else {
+				wd, err := os.Getwd()
+				if err != nil {
+					panic(err)
+				}
+				filesys = os.DirFS(wd + "/testdata")
+			}
+			chks, err := loadChunks(filesys, "testdata", tt.fields.Base, tt.fields.Chunk)
 			if err != nil {
 				t.Errorf("could not load chunks:%v", err)
 				return

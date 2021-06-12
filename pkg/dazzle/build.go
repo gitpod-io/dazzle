@@ -634,7 +634,7 @@ func (p *ProjectChunk) buildImage(ctx context.Context, tpe ChunkImageType, sess 
 		return tgt, false, nil
 	}
 
-	log.WithField("chunk", p.Name).WithField("ref", tgt).Warnf("building %s image", tpe)
+	log.WithField("chunk", p.Name).WithField("path", p.ContextPath).WithField("ref", tgt).Warnf("building %s image", tpe)
 	didBuild = true
 
 	eg, ctx := errgroup.WithContext(ctx)
