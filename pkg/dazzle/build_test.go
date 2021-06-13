@@ -24,6 +24,7 @@ import (
 	"context"
 	"io/fs"
 	"os"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -31,10 +32,13 @@ import (
 	_ "github.com/bshuster-repo/logrus-logstash-hook"
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
+	"github.com/csweichel/dazzle/pkg/solve"
 	_ "github.com/distribution/distribution/registry/storage/driver/inmemory"
 	"github.com/docker/distribution/configuration"
 	"github.com/docker/distribution/reference"
 	"github.com/docker/distribution/registry"
+	"github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/client/llb"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -239,6 +243,98 @@ func TestProjectChunk_test(t *testing.T) {
 	}
 }
 
+func TestProjectChunk_test_builds_if_not_present(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	registry, err := setupRegistry(ctx, "127.0.0.1:5111")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// run registry server
+	var errchan chan error
+	go func() {
+		errchan <- registry.ListenAndServe()
+	}()
+	select {
+	case err = <-errchan:
+		t.Fatalf("Error listening: %v", err)
+	default:
+	}
+
+	sess, err := NewSession(NewFakeSolver(
+		&client.SolveResponse{
+			ExporterResponse: map[string]string{
+				"containerimage.config.digest" : "sha256:455236b3a96eb95d7b7ccaa1c5073b7efb676b8146d7fcbba5013554d814efd4",
+				"containerimage.digest": "sha256:0eb1357cb23f1577a56fac66942a7f785a27ceb9574a39d5079e4e07a6a8d70f",
+				"image.name" : "localhost:5111/dazzle:base--f38f08be1b469c1b5e083e5e64104462344fe8843ab103a4ce5d2bfd7c09619e",
+			},
+		},
+	), "127.0.0.1:5111/test_projectchunk")
+	if err != nil {
+		t.Errorf("could not create session:%v", err)
+	}
+	resolver := docker.NewResolver(docker.ResolverOptions{})
+	reg := NewResolverRegistry(resolver)
+	sess.opts.Resolver = resolver
+	sess.opts.Registry = reg
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	filesys := os.DirFS(wd + "/testdata")
+	chks, err := loadChunks(filesys, "testdata", "chunks", "basic")
+	if err != nil {
+		t.Errorf("could not load chunks:%v", err)
+		return
+	}
+	if len(chks) != 1 {
+		t.Error("can only support 1 chunk")
+		return
+	}
+	// Should fail if no base ref set
+	gotOk, err := chks[0].test(ctx, sess)
+	if gotOk || (err != nil && !strings.Contains(err.Error(), "base ref not")) {
+		t.Errorf("TestProjectChunk_test_builds_if_not_present() unexpected result: %v or error = %v", gotOk, err)
+		return
+	}
+
+	// TODO(rl): validate the base image
+	// // Should handle if invalid base ref set
+	// invalidBaseRef := "127.0.0.1:5111/test_projectchunk@sha256:b25ab047a146b43a7a1bdd2b3346a05fd27dd2730af8ab06a9b8acca0f15b378"
+	// baseRef, err := reference.Parse(invalidBaseRef)
+	// if err != nil {
+	// 	t.Errorf("could not parse baseRef:%s", invalidBaseRef)
+	// 	return
+	// }
+	// digested, ok := baseRef.(reference.Digested)
+	// if !ok {
+	// 	t.Errorf("not a digest baseRef:%s", invalidBaseRef)
+	// }
+	// sess.baseRef = digested
+
+	// gotOk, err = chks[0].test(ctx, sess)
+	// if gotOk || (err != nil && !strings.Contains(err.Error(), "base ref not")) {
+	// 	t.Errorf("TestProjectChunk_test_builds_if_not_present() unexpected result: %v or error = %v", gotOk, err)
+	// 	return
+	// }
+
+	prj, err := LoadFromDir("testdata", LoadFromDirOpts{})
+	if err != nil {
+		t.Errorf("TestProjectChunk_test_builds_if_not_present() could not load project: %v", err)
+		return
+	}
+	err = prj.BuildBase(ctx, sess)
+	if err != nil {
+		t.Errorf("TestProjectChunk_test_builds_if_not_present() could not build base: %v", err)
+		return
+	}
+	gotOk, err = chks[0].test(ctx, sess)
+	if !gotOk || err != nil {
+		t.Errorf("TestProjectChunk_test_builds_if_not_present() unexpected result: %v or error = %v", gotOk, err)
+		return
+	}
+}
+
 type testRegistry struct {
 	testResult *StoredTestResult
 }
@@ -267,4 +363,18 @@ func (t testResolver) Fetcher(ctx context.Context, ref string) (remotes.Fetcher,
 
 func (t testResolver) Pusher(ctx context.Context, ref string) (remotes.Pusher, error) {
 	return nil, nil
+}
+
+type fakeSolver struct {
+	resp *client.SolveResponse
+}
+
+func NewFakeSolver(resp * client.SolveResponse) solve.Solver {
+	return fakeSolver{
+		resp,
+	}
+}
+
+func (c fakeSolver) Solve(ctx context.Context, def *llb.Definition, opt client.SolveOpt, statusChan chan *client.SolveStatus) (*client.SolveResponse, error) {
+	return c.resp, nil
 }

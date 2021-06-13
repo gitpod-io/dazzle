@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/csweichel/dazzle/pkg/solve"
 	"github.com/csweichel/dazzle/pkg/test"
 	"github.com/csweichel/dazzle/pkg/test/runner"
 	"github.com/moby/buildkit/client"
@@ -17,9 +18,10 @@ import (
 )
 
 // NewExecutor creates a new buildkit-backed executor
-func NewExecutor(cl *client.Client, ref string, cfg *ociv1.Image) *Executor {
+func NewExecutor(solver solve.Solver, ref string, cfg *ociv1.Image) *Executor {
 	return &Executor{
-		cl:  cl,
+		slv: solver,
+		// cl:  cl,
 		ref: ref,
 		cfg: cfg,
 	}
@@ -27,7 +29,8 @@ func NewExecutor(cl *client.Client, ref string, cfg *ociv1.Image) *Executor {
 
 // Executor runs tests in containers using buildkit
 type Executor struct {
-	cl  *client.Client
+	// cl  *client.Client
+	slv solve.Solver
 	ref string
 	cfg *ociv1.Image
 }
@@ -71,7 +74,7 @@ func (b *Executor) Run(ctx context.Context, spec *test.Spec) (rr *test.RunResult
 	)
 	defer cancel()
 	eg.Go(func() error {
-		_, err := b.cl.Solve(bctx, def, client.SolveOpt{
+		_, err := b.slv.Solve(bctx, def, client.SolveOpt{
 			Session: []session.Attachable{
 				authprovider.NewDockerAuthProvider(os.Stderr),
 			},

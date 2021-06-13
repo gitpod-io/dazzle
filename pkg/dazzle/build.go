@@ -28,12 +28,14 @@ import (
 	"io"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/errdefs"
 	clog "github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
+	"github.com/csweichel/dazzle/pkg/solve"
 	"github.com/csweichel/dazzle/pkg/test"
 	"github.com/csweichel/dazzle/pkg/test/buildkit"
 	"github.com/docker/distribution/reference"
@@ -128,6 +130,30 @@ func WithChunkedWithoutHash(enable bool) BuildOpt {
 func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 	ctx = clog.WithLogger(ctx, log.NewEntry(log.New()))
 
+	err := p.BuildBase(ctx, session)
+	if err != nil {
+		return fmt.Errorf("cannot build base %w", err)
+	}
+
+	for _, chk := range p.Chunks {
+		_, err := chk.test(ctx, session)
+		if err != nil {
+			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
+		}
+
+		_, _, err = chk.build(ctx, session)
+		if err != nil {
+			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// BuildBase builds the base image of a project
+func (p *Project) BuildBase(ctx context.Context, session *BuildSession) error {
+	ctx = clog.WithLogger(ctx, log.NewEntry(log.New()))
+
 	// Relying on the buildkit cache alone does not result in fixed content hashes.
 	// We must locally build hashes and use them as unique image names.
 	var baseref reference.Named
@@ -166,24 +192,11 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 		}
 	}
 	session.baseBuildFinished(absbaseref, basemf, basecfg)
-
-	for _, chk := range p.Chunks {
-		_, err := chk.test(ctx, session)
-		if err != nil {
-			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
-		}
-
-		_, _, err = chk.build(ctx, session)
-		if err != nil {
-			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
-		}
-	}
-
 	return nil
 }
 
 // NewSession starts a new build session
-func NewSession(cl *client.Client, targetRef string, options ...BuildOpt) (*BuildSession, error) {
+func NewSession(solver solve.Solver, targetRef string, options ...BuildOpt) (*BuildSession, error) {
 	// disable verbose containerd resolver logging
 	target, err := reference.ParseNamed(targetRef)
 	if err != nil {
@@ -201,16 +214,17 @@ func NewSession(cl *client.Client, targetRef string, options ...BuildOpt) (*Buil
 	}
 
 	return &BuildSession{
-		Client: cl,
+		// Client: cl,
+		Solver: solver,
 		Dest:   target,
 		opts:   opts,
 		chunks: make(map[string]*ociv1.Manifest),
 	}, nil
 }
 
-// BuildSession records all state of a build
 type BuildSession struct {
-	Client *client.Client
+	// Client *client.Client
+	Solver solve.Solver
 	Dest   reference.Named
 
 	opts    buildOpts
@@ -483,9 +497,11 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 		}
 	)
 
+	dispCtx, cancel := context.WithTimeout(ctx, time.Second * 10)
+	defer cancel()
 	rchan := make(chan map[string]string, 1)
 	eg.Go(func() error {
-		resp, err := sess.Client.Solve(ctx, nil, client.SolveOpt{
+		resp, err := sess.Solver.Solve(ctx, nil, client.SolveOpt{
 			Frontend:      "dockerfile.v0",
 			CacheImports:  []client.CacheOptionsEntry{cacheImport},
 			CacheExports:  []client.CacheOptionsEntry{cacheExport},
@@ -507,6 +523,7 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 				"dockerfile": p.ContextPath,
 			},
 		}, ch)
+		cancel()
 		if err != nil {
 			return err
 		}
@@ -526,14 +543,15 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 		}
 
 		// not using shared context to not disrupt display but let is finish reporting errors
-		return progressui.DisplaySolveStatus(context.TODO(), "", c, os.Stderr, ch)
+		return progressui.DisplaySolveStatus(dispCtx, "", c, os.Stderr, ch)
 	})
 	err = eg.Wait()
-	if err != nil {
+	if err != nil && err != context.Canceled {
 		return
 	}
 
 	resp := <-rchan
+	log.Infof("rchan resp: %v", resp)
 	dgst, err := digest.Parse(resp["containerimage.digest"])
 	if err != nil {
 		return
@@ -579,7 +597,7 @@ func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, e
 	}
 
 	log.WithField("chunk", p.Name).Warn("running tests")
-	executor := buildkit.NewExecutor(sess.Client, testRef.String(), imgcfg)
+	executor := buildkit.NewExecutor(sess.Solver, testRef.String(), imgcfg)
 	_, ok = test.RunTests(ctx, executor, p.Tests)
 	if !ok {
 		return false, fmt.Errorf("%s: tests failed", p.Name)
@@ -668,8 +686,14 @@ func (p *ProjectChunk) buildImage(ctx context.Context, tpe ChunkImageType, sess 
 	}
 
 	rchan := make(chan map[string]string, 1)
-	eg.Go(func() error {
-		resp, err := sess.Client.Solve(ctx, nil, client.SolveOpt{
+	eg.Go(func() (err error) {
+		defer func() { // Handle panics in client a little more gracefully
+			if recErr := recover(); recErr != nil { //catch
+				fmt.Fprintf(os.Stderr, "Exception: %v\n", recErr)
+				err = recErr.(error)
+			}
+		}()
+		resp, err := sess.Solver.Solve(ctx, nil, client.SolveOpt{
 			Frontend:      "dockerfile.v0",
 			FrontendAttrs: attrs,
 			CacheImports:  cacheImports,

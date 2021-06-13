@@ -24,7 +24,7 @@ import (
 	"context"
 
 	"github.com/csweichel/dazzle/pkg/dazzle"
-	"github.com/moby/buildkit/client"
+	"github.com/csweichel/dazzle/pkg/solve"
 	"github.com/spf13/cobra"
 )
 
@@ -44,12 +44,12 @@ var buildCmd = &cobra.Command{
 			return err
 		}
 
-		cl, err := client.New(context.Background(), rootCfg.BuildkitAddr, client.WithFailFast())
+		slv, err := solve.NewBuildkitSolver(rootCfg.BuildkitAddr)
 		if err != nil {
 			return err
 		}
 
-		session, err := dazzle.NewSession(cl, targetref,
+		session, err := dazzle.NewSession(slv, targetref,
 			dazzle.WithResolver(getResolver()),
 			dazzle.WithNoCache(nocache),
 			dazzle.WithPlainOutput(plainOutput),
