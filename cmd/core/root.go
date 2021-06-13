@@ -82,6 +82,7 @@ func Execute() {
 func getResolver() remotes.Resolver {
 	dockerCfg := config.LoadDefaultConfigFile(os.Stderr)
 	return docker.NewResolver(docker.ResolverOptions{
+		// TODO(rl): this is deprecated, replace with Hosts
 		Authorizer: docker.NewDockerAuthorizer(docker.WithAuthCreds(func(host string) (user, pwd string, err error) {
 			if dockerCfg == nil {
 				return

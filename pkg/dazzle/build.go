@@ -175,6 +175,7 @@ func (p *Project) BuildBase(ctx context.Context, session *BuildSession) error {
 	if err != nil {
 		return fmt.Errorf("cannot fetch base image: %w", err)
 	}
+	log.WithField("ref", baseref.String()).WithField("basemf", basemf).WithField("basecfg", basecfg).Info("built base image")
 	if session.opts.ChunkedWithoutHash && len(p.Config.Combiner.EnvVars) > 0 {
 		basemf.Annotations = make(map[string]string)
 		for _, e := range p.Config.Combiner.EnvVars {
