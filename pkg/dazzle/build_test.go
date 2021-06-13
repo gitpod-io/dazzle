@@ -37,7 +37,7 @@ func TestProjectChunk_test(t *testing.T) {
 	if err != nil {
 		t.Errorf("could not create session:%v", err)
 	}
-	sess.opts.Resolver = testResolver{}
+	sess.opts.Resolver = fakeResolver{}
 
 	type fields struct {
 		Name     string
@@ -123,7 +123,7 @@ func TestProjectChunk_test(t *testing.T) {
 `),
 					},
 				},
-				Registry: testRegistry{
+				Registry: fakeRegistry{
 					testResult: &StoredTestResult{
 						Passed: true,
 					},
@@ -176,15 +176,15 @@ func TestProjectChunk_test(t *testing.T) {
 	}
 }
 
-type testRegistry struct {
+type fakeRegistry struct {
 	testResult *StoredTestResult
 }
 
-func (t testRegistry) Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Digested, err error) {
+func (t fakeRegistry) Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Digested, err error) {
 	return nil, nil
 }
 
-func (t testRegistry) Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error) {
+func (t fakeRegistry) Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error) {
 	if t.testResult != nil {
 		r := cfg.(*StoredTestResult)
 		r.Passed = t.testResult.Passed
@@ -192,16 +192,17 @@ func (t testRegistry) Pull(ctx context.Context, ref reference.Reference, cfg int
 	return nil, nil, nil
 }
 
-type testResolver struct{}
+type fakeResolver struct{}
 
-func (t testResolver) Resolve(ctx context.Context, ref string) (name string, desc ocispec.Descriptor, err error) {
+func (t fakeResolver) Resolve(ctx context.Context, ref string) (name string, desc ocispec.Descriptor, err error) {
 	return "test", ocispec.Descriptor{}, nil
 }
 
-func (t testResolver) Fetcher(ctx context.Context, ref string) (remotes.Fetcher, error) {
+func (t fakeResolver) Fetcher(ctx context.Context, ref string) (remotes.Fetcher, error) {
 	return nil, nil
 }
 
-func (t testResolver) Pusher(ctx context.Context, ref string) (remotes.Pusher, error) {
+func (t fakeResolver) Pusher(ctx context.Context, ref string) (remotes.Pusher, error) {
 	return nil, nil
 }
+
