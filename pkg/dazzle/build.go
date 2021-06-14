@@ -168,7 +168,7 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 	session.baseBuildFinished(absbaseref, basemf, basecfg)
 
 	for _, chk := range p.Chunks {
-		_, err := chk.test(ctx, session)
+		_, _, err := chk.test(ctx, session)
 		if err != nil {
 			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
 		}
@@ -546,12 +546,12 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 	return resref, nil
 }
 
-func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, err error) {
+func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, didRun bool, err error) {
 	if sess == nil {
-		return false, errors.New("cannot test without a session")
+		return false, false, errors.New("cannot test without a session")
 	}
 	if sess.opts.NoTests || len(p.Tests) == 0 {
-		return true, nil
+		return true, false, nil
 	}
 
 	resultRef, err := p.ImageName(imageTypeTestResult, sess)
@@ -564,34 +564,34 @@ func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, e
 	}
 	if r != nil && r.Passed {
 		// tests have run before and have passed
-		return true, nil
+		return true, false, nil
 	}
 
 	// build temp image for testing
 	testRef, _, err := p.buildImage(ctx, ImageTypeTest, sess)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 
 	_, _, imgcfg, err := getImageMetadata(ctx, testRef, sess.opts.Registry)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 
 	log.WithField("chunk", p.Name).Warn("running tests")
 	executor := buildkit.NewExecutor(sess.Client, testRef.String(), imgcfg)
 	_, ok = test.RunTests(ctx, executor, p.Tests)
 	if !ok {
-		return false, fmt.Errorf("%s: tests failed", p.Name)
+		return false, true, fmt.Errorf("%s: tests failed", p.Name)
 	}
 
 	// tests have passed - mark them as such
 	_, err = pushTestResult(ctx, sess.opts.Registry, resultRef, StoredTestResult{true})
 	if err != nil && !errdefs.IsAlreadyExists(err) {
-		return true, err
+		return true, true, err
 	}
 
-	return true, nil
+	return true, true, nil
 }
 
 func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef reference.NamedTagged, didBuild bool, err error) {

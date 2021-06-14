@@ -1,0 +1,8 @@
+combiner:
+  combinations:
+    - name: all
+      chunks:
+        - basic
+  envvars:
+    - name: PATH
+      action: merge-unique

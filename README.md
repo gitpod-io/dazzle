@@ -204,3 +204,15 @@ They can be extracted using jq e.g.:
 $ go run pkg/test/runner/main.go eyJEZXNjIjoiaXQgc2hvdWxkIGhhdmUgR28gaW4gdmVyc2lvbiAxLjEzIiwiU2tpcCI6ZmFsc2UsIlVzZXIiOiIiLCJDb21tYW5kIjpbImdvIiwidmVyc2lvbiJdLCJFbnRyeXBvaW50IjpudWxsLCJFbnYiOm51bGwsIkFzc2VydGlvbnMiOlsic3Rkb3V0LmluZGV4T2YoXCJnbzEuMTFcIikgIT0gLTEiXX0= | jq -r '.Stdout | @base64d'
 go version go1.16.4 linux/amd64
 ```
+
+### Integration tests
+There is an integration test for the build command in pkg/dazzle/build_test.go - TestProjectChunk_test_integration and a shell script to run it. 
+The integration test does an end-to-end check along with editing a test and re-running to ensure only the test image is updated.
+
+It requires a running Buildkitd instance at unix:///run/buildkit/buildkitd.sock and a docker registry on 127.0.0.1:5000 (i.e. as this workspace is setup on startup).
+
+Override the env vars BUILDKIT_ADDR and TARGET_REF as required prior to running in a different environment.
+
+```bash
+$ ./integration_tests.sh
+```

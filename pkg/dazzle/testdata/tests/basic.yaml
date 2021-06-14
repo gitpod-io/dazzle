@@ -1,0 +1,5 @@
+- desc: "it should have xxx"
+  command: ["sh", "-c", "ls xxx"]
+  assert:
+    - "status == 0"
+    - stdout.indexOf("xxx") != -1
