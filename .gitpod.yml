@@ -11,7 +11,7 @@ tasks:
     openMode: tab-after
     command: |
       go generate -v ./...
-      echo "Use example.sh to build and test the example"
+      sh example.sh
 ports:
   - port: 5000
     visibility: private

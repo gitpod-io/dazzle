@@ -21,6 +21,7 @@
 package dazzle
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -35,6 +36,7 @@ import (
 	"github.com/docker/distribution/reference"
 	"github.com/minio/highwayhash"
 	ignore "github.com/sabhiram/go-gitignore"
+	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 
@@ -46,13 +48,16 @@ const (
 
 // ProjectConfig is the structure of a project's dazzle.yaml
 type ProjectConfig struct {
-	Combiner struct {
-		Combinations []ChunkCombination  `yaml:"combinations"`
-		EnvVars      []EnvVarCombination `yaml:"envvars,omitempty"`
-	} `yaml:"combiner"`
-	ChunkIgnore []string `yaml:"ignore,omitempty"`
+	Combiner    CombinerConfig `yaml:"combiner"`
+	ChunkIgnore []string       `yaml:"ignore,omitempty"`
 
 	chunkIgnores *ignore.GitIgnore
+}
+
+// CombinerConfig configures the chunk combiner
+type CombinerConfig struct {
+	Combinations []ChunkCombination  `yaml:"combinations"`
+	EnvVars      []EnvVarCombination `yaml:"envvars,omitempty"`
 }
 
 // ChunkCombination combines several chunks to a new image
@@ -124,6 +129,7 @@ type ProjectChunk struct {
 	ContextPath string
 	Tests       []*test.Spec
 	Args        map[string]string
+	Ref         reference.Canonical
 
 	cachedHash string
 }
@@ -446,7 +452,11 @@ const (
 )
 
 // ImageName produces a chunk image name
-func (p *ProjectChunk) ImageName(tpe ChunkImageType, sess *BuildSession) (reference.NamedTagged, error) {
+func (p *ProjectChunk) ImageName(tpe ChunkImageType, sess *BuildSession) (reference.Named, error) {
+	if tpe == ImageTypeChunked && p.Ref != nil {
+		return p.Ref, nil
+	}
+
 	if sess.baseRef == nil {
 		return nil, fmt.Errorf("base ref not set")
 	}
@@ -483,4 +493,77 @@ func (p *ProjectChunk) PrintManifest(out io.Writer, sess *BuildSession) error {
 	}
 
 	return p.manifest(sess.baseRef.String(), out, false)
+}
+
+type LoadProjectFromRefsOpts struct {
+	IgnoreDifferingBaseRefs bool
+}
+
+func LoadProjectFromRefs(ctx context.Context, sess *BuildSession, chunkRefs []string, opts LoadProjectFromRefsOpts) (*Project, error) {
+	var (
+		baseRef string
+		chunks  = make([]ProjectChunk, len(chunkRefs))
+	)
+	for i, ref := range chunkRefs {
+		parsedRef, err := reference.Parse(ref)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", ref, err)
+		}
+		absrefs, mf, _, err := getImageMetadata(ctx, parsedRef, sess.opts.Registry)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", ref, err)
+		}
+
+		chkBaseRef, ok := mf.Annotations[mfAnnotationBaseRef]
+		if !ok {
+			return nil, fmt.Errorf("chunk %s has no %s annotation - please build that chunk with an up-to-date version of dazzle", ref, mfAnnotationBaseRef)
+		}
+		if baseRef == "" {
+			baseRef = chkBaseRef
+		} else if baseRef != chkBaseRef {
+			if opts.IgnoreDifferingBaseRefs {
+				log.WithField("chunk", ref).WithField("chunk base ref", chkBaseRef).WithField("base ref", baseRef).Warn("chunks have different base images")
+			} else {
+				return nil, fmt.Errorf("cannot combine chunks with different base images: chunks %s is based on %s, while chunk %s is based on %s", chunkRefs[0], baseRef, ref, chkBaseRef)
+			}
+		}
+
+		chunks[i] = ProjectChunk{
+			Name: ref,
+			Ref:  absrefs,
+		}
+	}
+
+	parsedBaseRef, err := reference.Parse(baseRef)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse base ref %s: %w", baseRef, err)
+	}
+	absBaseRef, mf, _, err := getImageMetadata(ctx, parsedBaseRef, sess.opts.Registry)
+	if err != nil {
+		return nil, fmt.Errorf("cannot download base ref metadata: %w", err)
+	}
+	sess.baseRef = absBaseRef
+
+	var combinerConfig CombinerConfig
+	for k, v := range mf.Annotations {
+		if !strings.HasPrefix(k, mfAnnotationEnvVar) {
+			continue
+		}
+		name, val := strings.TrimPrefix(k, mfAnnotationEnvVar), EnvVarCombinationAction(v)
+		combinerConfig.EnvVars = append(combinerConfig.EnvVars, EnvVarCombination{
+			Name:   name,
+			Action: val,
+		})
+	}
+
+	return &Project{
+		Base: ProjectChunk{
+			Name: "base",
+			Ref:  absBaseRef,
+		},
+		Chunks: chunks,
+		Config: ProjectConfig{
+			Combiner: combinerConfig,
+		},
+	}, nil
 }

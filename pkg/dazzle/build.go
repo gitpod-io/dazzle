@@ -130,7 +130,6 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 
 	// Relying on the buildkit cache alone does not result in fixed content hashes.
 	// We must locally build hashes and use them as unique image names.
-	var baseref reference.Named
 	baseref, err := p.BaseRef(session.Dest)
 	if err != nil {
 		return err
@@ -442,7 +441,7 @@ func copyLayer(ctx context.Context, fetcher remotes.Fetcher, pusher remotes.Push
 	return w.Commit(ctx, desc.Size, desc.Digest)
 }
 
-func getImageMetadata(ctx context.Context, ref reference.Reference, registry Registry) (absref reference.Digested, manifest *ociv1.Manifest, config *ociv1.Image, err error) {
+func getImageMetadata(ctx context.Context, ref reference.Reference, registry Registry) (absref reference.Canonical, manifest *ociv1.Manifest, config *ociv1.Image, err error) {
 	var cfg ociv1.Image
 	manifest, absref, err = registry.Pull(ctx, ref, &cfg)
 	if err != nil {
@@ -453,7 +452,11 @@ func getImageMetadata(ctx context.Context, ref reference.Reference, registry Reg
 }
 
 // BaseRef returns the ref of the base image of a project
-func (p *Project) BaseRef(build reference.Named) (reference.NamedTagged, error) {
+func (p *Project) BaseRef(build reference.Named) (reference.Named, error) {
+	if p.Base.Ref != nil {
+		return p.Base.Ref, nil
+	}
+
 	hash, err := p.Base.hash("", true)
 	if err != nil {
 		return nil, err
@@ -606,10 +609,11 @@ func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef re
 	if sess.opts.ChunkedWithoutHash {
 		chktpe = ImageTypeChunkedNoHash
 	}
-	chkRef, err = p.ImageName(chktpe, sess)
+	rawChkRef, err := p.ImageName(chktpe, sess)
 	if err != nil {
 		return
 	}
+	chkRef = rawChkRef.(reference.NamedTagged)
 	log.WithField("chunk", p.Name).WithField("ref", chkRef).Warn("building chunked image")
 	opts := removeBaseLayerOpts{sess.opts.Resolver, sess.opts.Registry, sess.baseRef, sess.baseMF, sess.baseCfg, fullRef, chkRef}
 	mf, didBuild, err := removeBaseLayer(ctx, opts)

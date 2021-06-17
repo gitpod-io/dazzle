@@ -21,10 +21,18 @@
 package dazzle
 
 import (
+	"context"
+	"fmt"
 	"testing"
 	"testing/fstest"
 
+	"github.com/containerd/containerd/errdefs"
+	"github.com/docker/distribution/reference"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/opencontainers/go-digest"
+	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"gopkg.in/yaml.v2"
 )
 
 func TestLoadChunk(t *testing.T) {
@@ -313,10 +321,10 @@ func TestProjectChunk_hash(t *testing.T) {
 `),
 				},
 			},
-			Base:        "",
-			BaseRef:     "",
-			Chunk:       "base",
-			Expectation: "a557385d3e9d012dd179eaf7569850107c4af1adf8d99eb0fc402727827fab14",
+			Base:         "",
+			BaseRef:      "",
+			Chunk:        "base",
+			Expectation:  "a557385d3e9d012dd179eaf7569850107c4af1adf8d99eb0fc402727827fab14",
 			IncludeTests: true,
 		},
 		{
@@ -334,10 +342,10 @@ func TestProjectChunk_hash(t *testing.T) {
 `),
 				},
 			},
-			Base:        "",
-			BaseRef:     "",
-			Chunk:       "base",
-			Expectation: "cf686202a95f644d3767667c6172b6b29c4d225db23bcc8d17aa4bdb42224b58",
+			Base:         "",
+			BaseRef:      "",
+			Chunk:        "base",
+			Expectation:  "cf686202a95f644d3767667c6172b6b29c4d225db23bcc8d17aa4bdb42224b58",
 			IncludeTests: true,
 		},
 		{
@@ -445,4 +453,208 @@ func TestProjectChunk_hash(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoadProjectFromRefs(t *testing.T) {
+	imgs := map[string]mockRegistryImage{
+		"gitpod.io/base:ref": {
+			Manifest: &ociv1.Manifest{
+				Annotations: map[string]string{
+					mfAnnotationEnvVar + "foobar": string(EnvVarCombineMergeUnique),
+					"ignored-annotation":          "something",
+				},
+			},
+		},
+		"gitpod.io/chunk:one": {
+			Manifest: &ociv1.Manifest{
+				Annotations: map[string]string{
+					mfAnnotationBaseRef: "gitpod.io/base:ref",
+				},
+			},
+		},
+		"gitpod.io/chunk:two": {
+			Manifest: &ociv1.Manifest{
+				// use config to ensure this Manifest has a different content hash than gitpod.io/chunk:one
+				Config: ociv1.Descriptor{
+					Digest:    digest.FromString(""),
+					Size:      0,
+					MediaType: ociv1.MediaTypeImageConfig,
+				},
+				Annotations: map[string]string{
+					mfAnnotationBaseRef: "gitpod.io/base:ref",
+				},
+			},
+		},
+		"gitpod.io/chunk:three": {
+			Manifest: &ociv1.Manifest{
+				Annotations: map[string]string{
+					mfAnnotationBaseRef: "gitpod.io/other-base:ref",
+				},
+			},
+		},
+		"gitpod.io/chunk:no-base": {
+			Manifest: &ociv1.Manifest{},
+		},
+		"gitpod.io/chunk:invalid-base": {
+			Manifest: &ociv1.Manifest{
+				Annotations: map[string]string{
+					mfAnnotationBaseRef: "not a valid reference",
+				},
+			},
+		},
+	}
+	for ref, img := range imgs {
+		pref, err := reference.ParseNamed(ref)
+		if err != nil {
+			t.Fatalf("test fixture error: %v", err)
+		}
+		mf, err := yaml.Marshal(img.Manifest)
+		if err != nil {
+			t.Fatalf("test fixture error in %s: %v", ref, err)
+		}
+		img.AbsRef, err = reference.WithDigest(pref, digest.FromBytes(mf))
+		if err != nil {
+			t.Fatalf("test fixture error in %s: %v", ref, err)
+		}
+		imgs[ref] = img
+	}
+
+	type Expectation struct {
+		Error   string
+		Base    ProjectChunk
+		Chunks  []ProjectChunk
+		EnvVars []EnvVarCombination
+	}
+
+	tests := []struct {
+		Name        string
+		Images      map[string]mockRegistryImage
+		Refs        []string
+		Opts        LoadProjectFromRefsOpts
+		Expectation Expectation
+	}{
+		{
+			Name:   "happy path",
+			Images: imgs,
+			Refs:   []string{"gitpod.io/chunk:one", "gitpod.io/chunk:two"},
+			Expectation: Expectation{
+				Base:    ProjectChunk{Name: "base", Ref: imgs["gitpod.io/base:ref"].AbsRef},
+				Chunks:  []ProjectChunk{{Name: "gitpod.io/chunk:one", Ref: imgs["gitpod.io/chunk:one"].AbsRef}, {Name: "gitpod.io/chunk:two", Ref: imgs["gitpod.io/chunk:two"].AbsRef}},
+				EnvVars: []EnvVarCombination{{Name: "foobar", Action: EnvVarCombineMergeUnique}},
+			},
+		},
+		{
+			Name:   "ignore different base-refs",
+			Images: imgs,
+			Refs:   []string{"gitpod.io/chunk:one", "gitpod.io/chunk:three"},
+			Opts: LoadProjectFromRefsOpts{
+				IgnoreDifferingBaseRefs: true,
+			},
+			Expectation: Expectation{
+				Base:    ProjectChunk{Name: "base", Ref: imgs["gitpod.io/base:ref"].AbsRef},
+				Chunks:  []ProjectChunk{{Name: "gitpod.io/chunk:one", Ref: imgs["gitpod.io/chunk:one"].AbsRef}, {Name: "gitpod.io/chunk:three", Ref: imgs["gitpod.io/chunk:three"].AbsRef}},
+				EnvVars: []EnvVarCombination{{Name: "foobar", Action: EnvVarCombineMergeUnique}},
+			},
+		},
+		{
+			Name:   "invalid base ref",
+			Images: imgs,
+			Refs:   []string{"gitpod.io/chunk:invalid-base"},
+			Expectation: Expectation{
+				Error: "cannot parse base ref not a valid reference: invalid reference format",
+			},
+		},
+		{
+			Name:   "unkown base ref",
+			Images: imgs,
+			Refs:   []string{"gitpod.io/chunk:three"},
+			Expectation: Expectation{
+				Error: "cannot download base ref metadata: not found",
+			},
+		},
+		{
+			Name:   "invalid chunk refs",
+			Images: imgs,
+			Refs:   []string{"not a valid chunk"},
+			Expectation: Expectation{
+				Error: "not a valid chunk: invalid reference format",
+			},
+		},
+		{
+			Name:   "chunk not found",
+			Images: imgs,
+			Refs:   []string{"gitpod.io/chunk-not-found:latest"},
+			Expectation: Expectation{
+				Error: "gitpod.io/chunk-not-found:latest: not found",
+			},
+		},
+		{
+			Name:   "chunk without base",
+			Images: imgs,
+			Refs:   []string{"gitpod.io/chunk:no-base"},
+			Expectation: Expectation{
+				Error: "chunk gitpod.io/chunk:no-base has no dazzle.gitpod.io/base-ref annotation - please build that chunk with an up-to-date version of dazzle",
+			},
+		},
+		{
+			Name:   "different base-refs",
+			Images: imgs,
+			Refs:   []string{"gitpod.io/chunk:one", "gitpod.io/chunk:three"},
+			Expectation: Expectation{
+				Error: "cannot combine chunks with different base images: chunks gitpod.io/chunk:one is based on gitpod.io/base:ref, while chunk gitpod.io/chunk:three is based on gitpod.io/other-base:ref",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			sess, err := NewSession(nil, "foobar.com/result", WithResolver(testResolver{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			sess.opts.Registry = mockRegistry{imgs}
+
+			var act Expectation
+			prj, err := LoadProjectFromRefs(context.Background(), sess, test.Refs, test.Opts)
+			if err != nil {
+				act = Expectation{Error: err.Error()}
+			} else {
+				act = Expectation{
+					Base:    prj.Base,
+					Chunks:  prj.Chunks,
+					EnvVars: prj.Config.Combiner.EnvVars,
+				}
+			}
+
+			if diff := cmp.Diff(test.Expectation, act, cmpopts.IgnoreUnexported(ProjectChunk{}, imgs["gitpod.io/base:ref"].AbsRef)); diff != "" {
+				t.Errorf("LoadProjectFromRefs() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+type mockRegistryImage struct {
+	Manifest *ociv1.Manifest
+	Config   interface{}
+	AbsRef   reference.Canonical
+}
+
+type mockRegistry struct {
+	Images map[string]mockRegistryImage
+}
+
+func (t mockRegistry) Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Canonical, err error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (t mockRegistry) Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Canonical, err error) {
+	img, exists := t.Images[ref.String()]
+	if !exists {
+		err = errdefs.ErrNotFound
+		return
+	}
+
+	absref = img.AbsRef
+	manifest = img.Manifest
+	return
 }

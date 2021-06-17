@@ -180,11 +180,11 @@ type testRegistry struct {
 	testResult *StoredTestResult
 }
 
-func (t testRegistry) Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Digested, err error) {
+func (t testRegistry) Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Canonical, err error) {
 	return nil, nil
 }
 
-func (t testRegistry) Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error) {
+func (t testRegistry) Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Canonical, err error) {
 	if t.testResult != nil {
 		r := cfg.(*StoredTestResult)
 		r.Passed = t.testResult.Passed

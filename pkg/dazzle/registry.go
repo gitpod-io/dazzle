@@ -41,8 +41,8 @@ const (
 
 // Registry provides container registry services
 type Registry interface {
-	Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Digested, err error)
-	Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error)
+	Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Canonical, err error)
+	Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Canonical, err error)
 }
 
 type resolverRegistry struct {
@@ -61,7 +61,7 @@ type storeInRegistryOptions struct {
 	Manifest        *ociv1.Manifest
 }
 
-func (r resolverRegistry) Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Digested, err error) {
+func (r resolverRegistry) Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Canonical, err error) {
 	pusher, err := r.resolver.Pusher(ctx, ref.String())
 	if err != nil {
 		return nil, fmt.Errorf("cannot store in registry: %v", err)
@@ -145,7 +145,7 @@ func (r resolverRegistry) Push(ctx context.Context, ref reference.Named, opts st
 	return absref, nil
 }
 
-func (r resolverRegistry) Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error) {
+func (r resolverRegistry) Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Canonical, err error) {
 	_, desc, err := r.resolver.Resolve(ctx, ref.String())
 	if err != nil {
 		return
@@ -186,7 +186,7 @@ func (r resolverRegistry) Pull(ctx context.Context, ref reference.Reference, cfg
 	}
 	manifest = &mf
 
-	if rr, ok := ref.(reference.Digested); ok {
+	if rr, ok := ref.(reference.Canonical); ok {
 		absref = rr
 	} else if rr, ok := ref.(reference.Named); ok {
 		absref, err = reference.WithDigest(rr, desc.Digest)
