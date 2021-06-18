@@ -350,7 +350,7 @@ func loadChunks(dir fs.FS, contextBase, base, name string) (res []ProjectChunk, 
 	return []ProjectChunk{*chk}, nil
 }
 
-func (p *ProjectChunk) hash(baseref string) (res string, err error) {
+func (p *ProjectChunk) hash(baseref string, excludeTests bool) (res string, err error) {
 	if p.cachedHash != "" {
 		return p.cachedHash, nil
 	}
@@ -366,7 +366,7 @@ func (p *ProjectChunk) hash(baseref string) (res string, err error) {
 		return
 	}
 
-	err = p.manifest(baseref, hash)
+	err = p.manifest(baseref, hash, excludeTests)
 	if err != nil {
 		return
 	}
@@ -376,7 +376,7 @@ func (p *ProjectChunk) hash(baseref string) (res string, err error) {
 	return
 }
 
-func (p *ProjectChunk) manifest(baseref string, out io.Writer) (err error) {
+func (p *ProjectChunk) manifest(baseref string, out io.Writer, excludeTests bool) (err error) {
 	sources, err := doublestar.Glob(filepath.Join(p.ContextPath, "**/*"))
 	if err != nil {
 		return
@@ -416,14 +416,15 @@ func (p *ProjectChunk) manifest(baseref string, out io.Writer) (err error) {
 		res = append(res, fmt.Sprintf("%s:%s", strings.TrimPrefix(src, p.ContextPath), hex.EncodeToString(hash.Sum(nil))))
 	}
 
-	tests, _ := yaml.Marshal(p.Tests)
-
 	if baseref != "" {
 		fmt.Fprintf(out, "Baseref: %s\n", baseref)
 	}
 	fmt.Fprintf(out, "Dockerfile: %s\n", string(p.Dockerfile))
 	fmt.Fprintf(out, "Sources:\n%s\n", strings.Join(res, "\n"))
-	fmt.Fprintf(out, "Tests:\n%s\n", string(tests))
+	if !excludeTests {
+		tests, _ := yaml.Marshal(p.Tests)
+		fmt.Fprintf(out, "Tests:\n%s\n", string(tests))
+	}
 	return nil
 }
 
@@ -468,7 +469,7 @@ func (p *ProjectChunk) ImageName(tpe ChunkImageType, sess *BuildSession) (refere
 	}
 
 	safeName := strings.ReplaceAll(p.Name, ":", "-")
-	hash, err := p.hash(sess.baseRef.String())
+	hash, err := p.hash(sess.baseRef.String(), !(tpe == ImageTypeTest || tpe == imageTypeTestResult))
 	if err != nil {
 		return nil, fmt.Errorf("cannot compute chunk hash: %w", err)
 	}
@@ -481,5 +482,5 @@ func (p *ProjectChunk) PrintManifest(out io.Writer, sess *BuildSession) error {
 		return fmt.Errorf("base ref not set")
 	}
 
-	return p.manifest(sess.baseRef.String(), out)
+	return p.manifest(sess.baseRef.String(), out, false)
 }

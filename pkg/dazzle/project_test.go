@@ -33,10 +33,10 @@ func TestLoadChunk(t *testing.T) {
 		Chunks []ProjectChunk
 	}
 	var tests = []struct {
-		Name       string
-		FS         map[string]*fstest.MapFile
-		Base       string
-		Chunk      string
+		Name        string
+		FS          map[string]*fstest.MapFile
+		Base        string
+		Chunk       string
 		Expectation Expectation
 	}{
 		{
@@ -251,6 +251,197 @@ func TestResolveCombinations(t *testing.T) {
 
 			if diff := cmp.Diff(test.Expecation, act); diff != "" {
 				t.Errorf("resolveCombinations() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestProjectChunk_hash(t *testing.T) {
+	var tests = []struct {
+		Name         string
+		FS           map[string]*fstest.MapFile
+		Base         string
+		BaseRef      string
+		Chunk        string
+		IncludeTests bool
+		Expectation  string
+	}{
+		{
+			Name: "base only no tests",
+			FS: map[string]*fstest.MapFile{
+				"base/Dockerfile": {
+					Data: []byte("FROM alpine"),
+				},
+			},
+			Base:        "",
+			BaseRef:     "",
+			Chunk:       "base",
+			Expectation: "550ccae3705ce9627190644ef89f404f94b8d6f9d13d8df537ca66080dd326b2",
+		},
+		{
+			Name: "base with other tests should have same hash as no tests",
+			FS: map[string]*fstest.MapFile{
+				"base/Dockerfile": {
+					Data: []byte("FROM alpine"),
+				},
+				"tests/notbase.yaml": {
+					Data: []byte(`---
+- desc: "it should run ls"
+  command: ["ls"]
+  assert:
+  - "status == 0"
+`),
+				},
+			},
+			Base:        "",
+			BaseRef:     "",
+			Chunk:       "base",
+			Expectation: "550ccae3705ce9627190644ef89f404f94b8d6f9d13d8df537ca66080dd326b2",
+		},
+		{
+			Name: "base with tests should not have same hash as no tests if tests included",
+			FS: map[string]*fstest.MapFile{
+				"base/Dockerfile": {
+					Data: []byte("FROM alpine"),
+				},
+				"tests/base.yaml": {
+					Data: []byte(`---
+- desc: "it should run ls"
+  command: ["ls"]
+  assert:
+  - "status == 0"
+`),
+				},
+			},
+			Base:        "",
+			BaseRef:     "",
+			Chunk:       "base",
+			Expectation: "a557385d3e9d012dd179eaf7569850107c4af1adf8d99eb0fc402727827fab14",
+			IncludeTests: true,
+		},
+		{
+			Name: "base with changed test should have different hash if tests included",
+			FS: map[string]*fstest.MapFile{
+				"base/Dockerfile": {
+					Data: []byte("FROM alpine"),
+				},
+				"tests/base.yaml": {
+					Data: []byte(`---
+- desc: "it should run pwd"
+  command: ["pwd"]
+  assert:
+  - "status == 0"
+`),
+				},
+			},
+			Base:        "",
+			BaseRef:     "",
+			Chunk:       "base",
+			Expectation: "cf686202a95f644d3767667c6172b6b29c4d225db23bcc8d17aa4bdb42224b58",
+			IncludeTests: true,
+		},
+		{
+			Name: "base with tests should have same hash as no tests",
+			FS: map[string]*fstest.MapFile{
+				"base/Dockerfile": {
+					Data: []byte("FROM alpine"),
+				},
+				"tests/base.yaml": {
+					Data: []byte(`---
+- desc: "it should run ls"
+  command: ["ls"]
+  assert:
+  - "status == 0"
+`),
+				},
+			},
+			Base:        "",
+			BaseRef:     "",
+			Chunk:       "base",
+			Expectation: "550ccae3705ce9627190644ef89f404f94b8d6f9d13d8df537ca66080dd326b2",
+		},
+		{
+			Name:        "chunk only no tests",
+			Base:        "chunks",
+			BaseRef:     "",
+			Chunk:       "foobar",
+			Expectation: "fee0ceb7e0e5dd96ea24167ff3dc7fb31c88877cf165a37b1b35e6c7072e0993",
+			FS: map[string]*fstest.MapFile{
+				"chunks/foobar/Dockerfile": {
+					Data: []byte("FROM ubuntu"),
+				},
+			},
+		},
+		{
+			Name:        "chunk with tests should have same hash as no tests",
+			Base:        "chunks",
+			BaseRef:     "",
+			Chunk:       "foobar",
+			Expectation: "fee0ceb7e0e5dd96ea24167ff3dc7fb31c88877cf165a37b1b35e6c7072e0993",
+			FS: map[string]*fstest.MapFile{
+				"chunks/foobar/Dockerfile": {
+					Data: []byte("FROM ubuntu"),
+				},
+				"tests/foobar.yal": {
+					Data: []byte(`---
+- desc: "it should run ls"
+  command: ["ls"]
+  assert:
+  - "status == 0"
+- desc: "it should run pwd"
+  command: ["pwd"]
+  assert:
+  - "status == 0"
+`),
+				},
+			},
+		},
+		{
+			Name:        "chunk with tests should not have same hash as no tests if tests included",
+			Base:        "chunks",
+			BaseRef:     "",
+			Chunk:       "foobar",
+			Expectation: "f9e18ae354d33f5a9c317c89d7251ad323fb49b650031d5d5563a9693bcf2ae9",
+			FS: map[string]*fstest.MapFile{
+				"chunks/foobar/Dockerfile": {
+					Data: []byte("FROM ubuntu"),
+				},
+				"tests/foobar.yal": {
+					Data: []byte(`---
+- desc: "it should run ls"
+  command: ["ls"]
+  assert:
+  - "status == 0"
+- desc: "it should run pwd"
+  command: ["pwd"]
+  assert:
+  - "status == 0"
+`),
+				},
+			},
+			IncludeTests: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			chks, err := loadChunks(fstest.MapFS(test.FS), "", test.Base, test.Chunk)
+			if err != nil {
+				t.Errorf("could not load chunks: %v", err)
+				return
+			}
+			if len(chks) != 1 {
+				t.Error("can only test 1 chunk prohect")
+				return
+			}
+			chk := chks[0]
+			act, err := chk.hash(test.BaseRef, !test.IncludeTests)
+			if err != nil {
+				t.Errorf("could not compute hash: %v", err)
+				return
+			}
+			if diff := cmp.Diff(test.Expectation, act); diff != "" {
+				t.Errorf("hash() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

@@ -302,11 +302,11 @@ func removeBaseLayer(ctx context.Context, opts removeBaseLayerOpts) (chkmf *ociv
 			cd = chkcfg.RootFS.DiffIDs[i]
 		)
 		if bl.Digest.String() != cl.Digest.String() {
-			err = fmt.Errorf("chunk was not built from base image: digest mistmatch on layer %d: base %s != chunk %s", i, bl.Digest.String(), cl.Digest.String())
+			err = fmt.Errorf("chunk was not built from base image: digest mismatch on layer %d: base %s != chunk %s", i, bl.Digest.String(), cl.Digest.String())
 			return
 		}
 		if bd.String() != cd.String() {
-			err = fmt.Errorf("chunk was not built from base image: digest mistmatch on diffID %d: base %s != chunk %s", i, bd.String(), cd.String())
+			err = fmt.Errorf("chunk was not built from base image: digest mismatch on diffID %d: base %s != chunk %s", i, bd.String(), cd.String())
 			return
 		}
 	}
@@ -454,7 +454,7 @@ func getImageMetadata(ctx context.Context, ref reference.Reference, registry Reg
 
 // BaseRef returns the ref of the base image of a project
 func (p *Project) BaseRef(build reference.Named) (reference.NamedTagged, error) {
-	hash, err := p.Base.hash("")
+	hash, err := p.Base.hash("", true)
 	if err != nil {
 		return nil, err
 	}
