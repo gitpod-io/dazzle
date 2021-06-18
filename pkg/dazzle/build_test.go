@@ -24,11 +24,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
-	"path/filepath"
+	"os/exec"
+	"regexp"
+	"sort"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -177,11 +179,11 @@ func TestProjectChunk_test(t *testing.T) {
 			}
 			gotOk, _, err := chks[0].test(tt.args.ctx, tt.args.sess)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ProjectChunk.test() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("TestProjectChunk_test() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if gotOk != tt.wantOk {
-				t.Errorf("ProjectChunk.test() = %v, want %v", gotOk, tt.wantOk)
+				t.Errorf("TestProjectChunk_test() = %v, want %v", gotOk, tt.wantOk)
 			}
 		})
 	}
@@ -255,9 +257,9 @@ func TestProjectChunk_test_integration(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	targetDir := tmpDir + "/testdata"
-	err = CopyDir("./testdata", targetDir)
+	result, err := exec.Command("cp", "-rp", "./testdata", targetDir).CombinedOutput()
 	if err != nil {
-		t.Errorf("TestProjectChunk_test_integration() could not copy testdata: %v", err)
+		t.Errorf("TestProjectChunk_test_integration() could not copy testdata: %v\n%s", err, result)
 		return
 	}
 
@@ -288,7 +290,7 @@ func TestProjectChunk_test_integration(t *testing.T) {
 
 	err = prj.Build(context.Background(), session)
 	if err != nil {
-		t.Errorf("ProjectChunk.test() unexpected Build error = %v", err)
+		t.Errorf("TestProjectChunk_test_integration.test() unexpected Build error = %v", err)
 		return
 	}
 
@@ -320,7 +322,7 @@ func TestProjectChunk_test_integration(t *testing.T) {
 	// Re-running build should reuse existing images & tags
 	err = prj.Build(context.Background(), session)
 	if err != nil {
-		t.Errorf("ProjectChunk.test() unexpected rebuild 1 error = %v", err)
+		t.Errorf("TestProjectChunk_test_integration() unexpected rebuild 1 error = %v", err)
 		return
 	}
 
@@ -343,9 +345,30 @@ func TestProjectChunk_test_integration(t *testing.T) {
 			t.Errorf("TestProjectChunk_test_integration() could not get decode tags from registry: %v", err)
 			return
 		}
-		if len(tagResp.Tags) != 5 {
-			t.Errorf("TestProjectChunk_test_integration() expected 5 tags from registry: got %v", tagResp.Tags)
+
+		// regexes for tags we expect
+		// NOTE: order is important
+		expectedTagsRE := []string{
+			`base--[[:alnum:]]+$`,
+			`basic--[[:alnum:]]+--chunked$`,
+			`basic--[[:alnum:]]+--full$`,
+			`basic--[[:alnum:]]+--test$`,
+			`basic--[[:alnum:]]+--test-result$`,
+		}
+
+		// Should match 'as-is'
+		if len(expectedTagsRE) != len(tagResp.Tags) {
+			t.Errorf("mismatched tag lengths, got:%s, want%d", tagResp.Tags, len(expectedTagsRE))
 			return
+		}
+		sort.Strings(tagResp.Tags)
+		for i, tag := range tagResp.Tags {
+			re := expectedTagsRE[i]
+			matched, err := regexp.MatchString(re, tag)
+			if !matched || err != nil {
+				t.Errorf("tags mismatch\nwant:%s\n got:%s\n err:%s)", re, tag, err)
+				return
+			}
 		}
 	}
 
@@ -353,13 +376,13 @@ func TestProjectChunk_test_integration(t *testing.T) {
 	for _, chk := range prj.Chunks {
 		ok, didRun, err := chk.test(ctx, session)
 		if err != nil || !ok || didRun {
-			t.Errorf("TestProjectChunk_test_integration() error:%v testing chunk: %s with results: %v:%v", err, chk.Name, ok, didRun)
+			t.Errorf("TestProjectChunk_test_integration() test() error:%v testing chunk: %s with results: %v:%v", err, chk.Name, ok, didRun)
 			return
 		}
 
 		_, didBuild, err := chk.build(ctx, session)
 		if err != nil || didBuild {
-			t.Errorf("TestProjectChunk_test_integration() error:%v building chunk: %s didBuild:%v", err, chk.Name, didBuild)
+			t.Errorf("TestProjectChunk_test_integration() build() error:%v building chunk: %s didBuild:%v", err, chk.Name, didBuild)
 			return
 		}
 	}
@@ -384,10 +407,10 @@ func TestProjectChunk_test_integration(t *testing.T) {
 		return
 	}
 
-	// Re-running build should create a new test tags
+	// Re-running build should create new test tags
 	err = prj.Build(context.Background(), session)
 	if err != nil {
-		t.Errorf("ProjectChunk.test() unexpected rebuild 2 error = %v", err)
+		t.Errorf("TestProjectChunk_test_integration() unexpected rebuild 2 error = %v", err)
 		return
 	}
 
@@ -410,112 +433,34 @@ func TestProjectChunk_test_integration(t *testing.T) {
 			t.Errorf("TestProjectChunk_test_integration() could not get decode tags from registry: %v", err)
 			return
 		}
-		if len(tagResp.Tags) != 7 {
-			t.Errorf("TestProjectChunk_test_integration() expected 7 tags from registry: got %v", tagResp.Tags)
+		sort.Strings(tagResp.Tags)
+		// NOTE: add another \n for consistency since the hashes can change the order
+		allTags := strings.Join(tagResp.Tags, "\n") + "\n"
+		if 7 != len(tagResp.Tags) {
+			t.Errorf("mismatched tag lengths, got:%s, want:7", allTags)
 			return
 		}
-	}
-}
-
-// FROM: https://gist.github.com/r0l1/92462b38df26839a3ca324697c8cba04
-// CopyFile copies the contents of the file named src to the file named
-// by dst. The file will be created if it does not already exist. If the
-// destination file exists, all it's contents will be replaced by the contents
-// of the source file. The file mode will be copied from the source and
-// the copied data is synced/flushed to stable storage.
-func CopyFile(src, dst string) (err error) {
-	in, err := os.Open(src)
-	if err != nil {
-		return
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if e := out.Close(); e != nil {
-			err = e
+		// regexes with counts for tags we expect
+		// NOTE: order is important
+		type expectedTag struct {
+			Regex string
+			Count int
 		}
-	}()
-
-	_, err = io.Copy(out, in)
-	if err != nil {
-		return
-	}
-
-	err = out.Sync()
-	if err != nil {
-		return
-	}
-
-	si, err := os.Stat(src)
-	if err != nil {
-		return
-	}
-	err = os.Chmod(dst, si.Mode())
-	if err != nil {
-		return
-	}
-
-	return
-}
-
-// CopyDir recursively copies a directory tree, attempting to preserve permissions.
-// Source directory must exist, destination directory must *not* exist.
-// Symlinks are ignored and skipped.
-func CopyDir(src string, dst string) (err error) {
-	src = filepath.Clean(src)
-	dst = filepath.Clean(dst)
-
-	si, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if !si.IsDir() {
-		return fmt.Errorf("source is not a directory")
-	}
-
-	_, err = os.Stat(dst)
-	if err != nil && !os.IsNotExist(err) {
-		return
-	}
-	if err == nil {
-		return fmt.Errorf("destination already exists")
-	}
-
-	err = os.MkdirAll(dst, si.Mode())
-	if err != nil {
-		return
-	}
-
-	entries, err := ioutil.ReadDir(src)
-	if err != nil {
-		return
-	}
-
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
-
-		if entry.IsDir() {
-			err = CopyDir(srcPath, dstPath)
-			if err != nil {
-				return
-			}
-		} else {
-			// Skip symlinks.
-			if entry.Mode()&os.ModeSymlink != 0 {
-				continue
-			}
-
-			err = CopyFile(srcPath, dstPath)
-			if err != nil {
-				return
+		expectedTags := []expectedTag{
+			{`base--[[:alnum:]]+\n`, 1},
+			{`basic--[[:alnum:]]+--chunked\n`, 1},
+			{`basic--[[:alnum:]]+--full\n`, 2},
+			{`basic--[[:alnum:]]+--test\n`, 2},
+			// NOTE: since tests pass the result is unchanged
+			{`basic--[[:alnum:]]+--test-result\n`, 1},
+		}
+		for _, expectedTag := range expectedTags {
+			re := regexp.MustCompile(expectedTag.Regex)
+			cnt := expectedTag.Count
+			matches := re.FindAllStringIndex(allTags, -1)
+			if cnt != len(matches) {
+				t.Errorf("tags mismatch for %s\nwant:%d\n got:%d\n \ntags:%s\nerr:%s)", expectedTag.Regex, cnt, len(matches), allTags, err)
 			}
 		}
 	}
-
-	return
 }
