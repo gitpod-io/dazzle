@@ -6,7 +6,7 @@
 
 dazzle is a rather experimental Docker/OCI image builder. Its goal is to build independent layers where a change to one layer does *not* invalidate the ones sitting "above" it.
 
-**Beware** There's a bit of a [rewrite](https://github.com/csweichel/dazzle/tree/rewrite) going on which makes dazzle about 5x faster, more reliable and less hacky. It also changes the format for dazzle builds, moving from a single Dockerfile to one per "chunk"/layer.
+**Beware** Recently the format for [dazzle builds was changed](https://github.com/gitpod-io/dazzle/commit/ceaa19ef6562e03108c8ea9474d2c627a452a7ca), moving from a single Dockerfile to one per "chunk"/layer. It is also about 5x faster, more reliable and less hacky. 
 
 ## How does it work?
 dazzle has three main capabilities.
