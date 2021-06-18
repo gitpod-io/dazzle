@@ -556,11 +556,11 @@ func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, d
 
 	resultRef, err := p.ImageName(imageTypeTestResult, sess)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	r, err := pullTestResult(ctx, sess.opts.Registry, resultRef)
 	if err != nil && !errdefs.IsNotFound(err) {
-		return false, err
+		return false, false, err
 	}
 	if r != nil && r.Passed {
 		// tests have run before and have passed
