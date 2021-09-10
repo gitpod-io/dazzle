@@ -22,11 +22,24 @@ package dazzle
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"os/exec"
+	"regexp"
+	"sort"
+	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/containerd/containerd/remotes"
+	"github.com/containerd/containerd/remotes/docker"
 	"github.com/docker/distribution/reference"
+
+	"github.com/moby/buildkit/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -37,7 +50,7 @@ func TestProjectChunk_test(t *testing.T) {
 	if err != nil {
 		t.Errorf("could not create session:%v", err)
 	}
-	sess.opts.Resolver = testResolver{}
+	sess.opts.Resolver = fakeResolver{}
 
 	type fields struct {
 		Name     string
@@ -123,7 +136,7 @@ func TestProjectChunk_test(t *testing.T) {
 `),
 					},
 				},
-				Registry: testRegistry{
+				Registry: fakeRegistry{
 					testResult: &StoredTestResult{
 						Passed: true,
 					},
@@ -164,27 +177,27 @@ func TestProjectChunk_test(t *testing.T) {
 			if tt.fields.Registry != nil {
 				sess.opts.Registry = tt.fields.Registry
 			}
-			gotOk, err := chks[0].test(tt.args.ctx, tt.args.sess)
+			gotOk, _, err := chks[0].test(tt.args.ctx, tt.args.sess)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ProjectChunk.test() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("TestProjectChunk_test() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if gotOk != tt.wantOk {
-				t.Errorf("ProjectChunk.test() = %v, want %v", gotOk, tt.wantOk)
+				t.Errorf("TestProjectChunk_test() = %v, want %v", gotOk, tt.wantOk)
 			}
 		})
 	}
 }
 
-type testRegistry struct {
+type fakeRegistry struct {
 	testResult *StoredTestResult
 }
 
-func (t testRegistry) Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Digested, err error) {
+func (t fakeRegistry) Push(ctx context.Context, ref reference.Named, opts storeInRegistryOptions) (absref reference.Digested, err error) {
 	return nil, nil
 }
 
-func (t testRegistry) Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error) {
+func (t fakeRegistry) Pull(ctx context.Context, ref reference.Reference, cfg interface{}) (manifest *ociv1.Manifest, absref reference.Digested, err error) {
 	if t.testResult != nil {
 		r := cfg.(*StoredTestResult)
 		r.Passed = t.testResult.Passed
@@ -192,16 +205,262 @@ func (t testRegistry) Pull(ctx context.Context, ref reference.Reference, cfg int
 	return nil, nil, nil
 }
 
-type testResolver struct{}
+type fakeResolver struct{}
 
-func (t testResolver) Resolve(ctx context.Context, ref string) (name string, desc ocispec.Descriptor, err error) {
+func (t fakeResolver) Resolve(ctx context.Context, ref string) (name string, desc ocispec.Descriptor, err error) {
 	return "test", ocispec.Descriptor{}, nil
 }
 
-func (t testResolver) Fetcher(ctx context.Context, ref string) (remotes.Fetcher, error) {
+func (t fakeResolver) Fetcher(ctx context.Context, ref string) (remotes.Fetcher, error) {
 	return nil, nil
 }
 
-func (t testResolver) Pusher(ctx context.Context, ref string) (remotes.Pusher, error) {
+func (t fakeResolver) Pusher(ctx context.Context, ref string) (remotes.Pusher, error) {
 	return nil, nil
+}
+
+type tagResponse struct {
+	Name string
+	Tags []string
+}
+
+func TestProjectChunk_test_integration(t *testing.T) {
+	// NOTE: requires a running Buildkit daemon and registry
+	buildkitAddr := os.Getenv("BUILDKIT_ADDR")
+	if buildkitAddr == "" {
+		t.Skip("set BUILDKIT_ADDR to run this test")
+	}
+	targetRef := os.Getenv("TARGET_REF")
+	if targetRef == "" {
+		t.Skip("set TARGET_REF to run this test")
+	}
+	// NOTE: using a ~unique target here to allow identification of the output from this test
+	targetRepo := fmt.Sprintf("integration_%d", time.Now().UnixNano())
+	fullTargetRef := fmt.Sprintf("%s/%s", targetRef, targetRepo)
+	ctx := context.Background()
+	cl, err := client.New(ctx, buildkitAddr, client.WithFailFast())
+	if err != nil {
+		t.Errorf("Could not create client: %v", err)
+		return
+	}
+	resolver := docker.NewResolver(docker.ResolverOptions{})
+	session, err := NewSession(cl, fullTargetRef,
+		WithResolver(resolver),
+		WithNoCache(true),
+		WithPlainOutput(true),
+		WithChunkedWithoutHash(false),
+	)
+	if err != nil {
+		t.Errorf("Could not create session: %v", err)
+		return
+	}
+
+	tmpDir := t.TempDir()
+	targetDir := tmpDir + "/testdata"
+	result, err := exec.Command("cp", "-rp", "./testdata", targetDir).CombinedOutput()
+	if err != nil {
+		t.Errorf("TestProjectChunk_test_integration() could not copy testdata: %v\n%s", err, result)
+		return
+	}
+
+	prj, err := LoadFromDir(targetDir, LoadFromDirOpts{})
+	if err != nil {
+		t.Errorf("TestProjectChunk_test_integration() could not load project: %v", err)
+		return
+	}
+
+	// Ensure we don't have any existing tags in repository
+	httpClient := &http.Client{}
+	req, _ := http.NewRequest("GET", "http://"+targetRef+"/v2/"+targetRepo+"/tags/list", nil)
+	req.Header.Add("Accept", "application/json")
+
+	// Should not have any tags for this project
+	{
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			t.Errorf("TestProjectChunk_test_integration() could not get tags from registry: %v", err)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("TestProjectChunk_test_integration() should not have tags: returned %v", resp)
+			return
+		}
+	}
+
+	err = prj.Build(context.Background(), session)
+	if err != nil {
+		t.Errorf("TestProjectChunk_test_integration.test() unexpected Build error = %v", err)
+		return
+	}
+
+	// Should now have tags for this project
+	{
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			t.Errorf("TestProjectChunk_test_integration() could not get tags from registry: %v", err)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("TestProjectChunk_test_integration() should have tags: returned %v", resp)
+			return
+		}
+
+		var tagResp tagResponse
+		// Decode the data
+		if err := json.NewDecoder(resp.Body).Decode(&tagResp); err != nil {
+			t.Errorf("TestProjectChunk_test_integration() could not get decode tags from registry: %v", err)
+			return
+		}
+		if len(tagResp.Tags) != 5 {
+			t.Errorf("TestProjectChunk_test_integration() expected 5 tags from registry: got %v", tagResp.Tags)
+			return
+		}
+	}
+
+	// Re-running build should reuse existing images & tags
+	err = prj.Build(context.Background(), session)
+	if err != nil {
+		t.Errorf("TestProjectChunk_test_integration() unexpected rebuild 1 error = %v", err)
+		return
+	}
+
+	// Should not have any new tags for this project
+	{
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			t.Errorf("TestProjectChunk_test_integration() could not get tags from registry: %v", err)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("TestProjectChunk_test_integration() should have tags: returned %v", resp)
+			return
+		}
+
+		var tagResp tagResponse
+		// Decode the data
+		if err := json.NewDecoder(resp.Body).Decode(&tagResp); err != nil {
+			t.Errorf("TestProjectChunk_test_integration() could not get decode tags from registry: %v", err)
+			return
+		}
+
+		// regexes for tags we expect
+		// NOTE: order is important
+		expectedTagsRE := []string{
+			`base--[[:alnum:]]+$`,
+			`basic--[[:alnum:]]+--chunked$`,
+			`basic--[[:alnum:]]+--full$`,
+			`basic--[[:alnum:]]+--test$`,
+			`basic--[[:alnum:]]+--test-result$`,
+		}
+
+		// Should match 'as-is'
+		if len(expectedTagsRE) != len(tagResp.Tags) {
+			t.Errorf("mismatched tag lengths, got:%s, want%d", tagResp.Tags, len(expectedTagsRE))
+			return
+		}
+		sort.Strings(tagResp.Tags)
+		for i, tag := range tagResp.Tags {
+			re := expectedTagsRE[i]
+			matched, err := regexp.MatchString(re, tag)
+			if !matched || err != nil {
+				t.Errorf("tags mismatch\nwant:%s\n got:%s\n err:%s)", re, tag, err)
+				return
+			}
+		}
+	}
+
+	// Individually check each chunk to ensure it doesn't rebuild
+	for _, chk := range prj.Chunks {
+		ok, didRun, err := chk.test(ctx, session)
+		if err != nil || !ok || didRun {
+			t.Errorf("TestProjectChunk_test_integration() test() error:%v testing chunk: %s with results: %v:%v", err, chk.Name, ok, didRun)
+			return
+		}
+
+		_, didBuild, err := chk.build(ctx, session)
+		if err != nil || didBuild {
+			t.Errorf("TestProjectChunk_test_integration() build() error:%v building chunk: %s didBuild:%v", err, chk.Name, didBuild)
+			return
+		}
+	}
+
+	// Modify a test and ensure it is rebuilt
+	newTest := []byte(`- desc: "it should have xxx"
+  command: ["sh", "-c", "ls -tl xxx"]
+  assert:
+    - "status == 0"
+    - stdout.indexOf("xxx") != -1`)
+
+	err = ioutil.WriteFile(targetDir+"/tests/basic.yaml", newTest, 0644)
+	if err != nil {
+		t.Errorf("TestProjectChunk_test_integration() error:%v writing new test", err)
+		return
+	}
+
+	// Reload to get new test
+	prj, err = LoadFromDir(targetDir, LoadFromDirOpts{})
+	if err != nil {
+		t.Errorf("TestProjectChunk_test_integration() could not reload project: %v", err)
+		return
+	}
+
+	// Re-running build should create new test tags
+	err = prj.Build(context.Background(), session)
+	if err != nil {
+		t.Errorf("TestProjectChunk_test_integration() unexpected rebuild 2 error = %v", err)
+		return
+	}
+
+	// Should now have new test tags for this project
+	{
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			t.Errorf("TestProjectChunk_test_integration() could not get tags from registry: %v", err)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("TestProjectChunk_test_integration() should have tags: returned %v", resp)
+			return
+		}
+
+		var tagResp tagResponse
+		// Decode the data
+		if err := json.NewDecoder(resp.Body).Decode(&tagResp); err != nil {
+			t.Errorf("TestProjectChunk_test_integration() could not get decode tags from registry: %v", err)
+			return
+		}
+		sort.Strings(tagResp.Tags)
+		// NOTE: add another \n for consistency since the hashes can change the order
+		allTags := strings.Join(tagResp.Tags, "\n") + "\n"
+		if 7 != len(tagResp.Tags) {
+			t.Errorf("mismatched tag lengths, got:%s, want:7", allTags)
+			return
+		}
+		// regexes with counts for tags we expect
+		// NOTE: order is important
+		type expectedTag struct {
+			Regex string
+			Count int
+		}
+		expectedTags := []expectedTag{
+			{`base--[[:alnum:]]+\n`, 1},
+			{`basic--[[:alnum:]]+--chunked\n`, 1},
+			{`basic--[[:alnum:]]+--full\n`, 2},
+			{`basic--[[:alnum:]]+--test\n`, 2},
+			// NOTE: since tests pass the result is unchanged
+			{`basic--[[:alnum:]]+--test-result\n`, 1},
+		}
+		for _, expectedTag := range expectedTags {
+			re := regexp.MustCompile(expectedTag.Regex)
+			cnt := expectedTag.Count
+			matches := re.FindAllStringIndex(allTags, -1)
+			if cnt != len(matches) {
+				t.Errorf("tags mismatch for %s\nwant:%d\n got:%d\n \ntags:%s\nerr:%s)", expectedTag.Regex, cnt, len(matches), allTags, err)
+			}
+		}
+	}
 }

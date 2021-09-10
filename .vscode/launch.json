@@ -27,6 +27,21 @@
             "args": [
                 "eyJEZXNjIjoiaXQgc2hvdWxkIGhhdmUgR28gaW4gdmVyc2lvbiAxLjEzIiwiU2tpcCI6ZmFsc2UsIlVzZXIiOiIiLCJDb21tYW5kIjpbImdvIiwidmVyc2lvbiJdLCJFbnRyeXBvaW50IjpudWxsLCJFbnYiOm51bGwsIkFzc2VydGlvbnMiOlsic3Rkb3V0LmluZGV4T2YoXCJnbzEuMTFcIikgIT0gLTEiXX0="
             ]
+        },
+        {
+            "name": "Launch build integration test",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${fileWorkspaceFolder}/pkg/dazzle/build_test.go",
+            "args": [
+                "-test.run",
+                "TestProjectChunk_test_integration"
+            ],
+            "env": {
+                "BUILDKIT_ADDR": "unix:///run/buildkit/buildkitd.sock",
+                "TARGET_REF": "127.0.0.1:5000",
+            }
         }
     ]
 }
