@@ -8,11 +8,11 @@ require (
 	github.com/alecthomas/repr v0.0.0-20210301060118-828286944d6a
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/containerd/console v1.0.2
-	github.com/containerd/containerd v1.5.4
+	github.com/containerd/containerd v1.5.7
 	github.com/creack/pty v1.1.13
 	github.com/docker/cli v20.10.7+incompatible
 	github.com/docker/distribution v2.7.1+incompatible
-	github.com/google/go-cmp v0.5.4
+	github.com/google/go-cmp v0.5.5
 	github.com/gookit/color v1.4.2
 	github.com/manifoldco/promptui v0.8.0
 	github.com/mattn/go-isatty v0.0.13
