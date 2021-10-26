@@ -45,15 +45,14 @@ changelog:
     - '^test:'
 release:
   prerelease: auto
-# dockers:
-#   -
-#     goos: linux
-#     goarch: amd64
-#     goarm: ''
-#     binaries:
-#     - dazzle
-#     dockerfile: Dockerfile
-#     image_templates:
-#     - "csweichel/dazzle:{{ .Tag }}"
-#     extra_files:
-#     - README.md
+dockers:
+  - goos: linux
+    goarch: amd64
+    goarm: ''
+    binaries:
+    - dazzle
+    dockerfile: Dockerfile
+    image_templates:
+    - "ghcr.io/gitpod-io/dazzle:{{ .Tag }}"
+    extra_files:
+    - README.md
