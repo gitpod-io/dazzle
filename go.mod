@@ -19,7 +19,7 @@ require (
 	github.com/minio/highwayhash v1.0.2
 	github.com/moby/buildkit v0.8.3
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.0.1
+	github.com/opencontainers/image-spec v1.0.2
 	github.com/robertkrimen/otto v0.0.0-20200922221731-ef014fd054ac
 	github.com/sabhiram/go-gitignore v0.0.0-20201211210132-54b8a0bf510f
 	github.com/sirupsen/logrus v1.8.1
