@@ -264,7 +264,7 @@ func TestProjectChunk_hash(t *testing.T) {
 		BaseRef      string
 		Chunk        string
 		IncludeTests bool
-		Expectation  string
+		Expectation  map[string]string
 	}{
 		{
 			Name: "base only no tests",
@@ -276,7 +276,7 @@ func TestProjectChunk_hash(t *testing.T) {
 			Base:        "",
 			BaseRef:     "",
 			Chunk:       "base",
-			Expectation: "550ccae3705ce9627190644ef89f404f94b8d6f9d13d8df537ca66080dd326b2",
+			Expectation: map[string]string{"base": "02e46ef9c6d86deea6ffb67b6cd04a99e3600bb8d2c01f60359ed7a1ba2ed295"},
 		},
 		{
 			Name: "base with other tests should have same hash as no tests",
@@ -296,7 +296,7 @@ func TestProjectChunk_hash(t *testing.T) {
 			Base:        "",
 			BaseRef:     "",
 			Chunk:       "base",
-			Expectation: "550ccae3705ce9627190644ef89f404f94b8d6f9d13d8df537ca66080dd326b2",
+			Expectation: map[string]string{"base": "02e46ef9c6d86deea6ffb67b6cd04a99e3600bb8d2c01f60359ed7a1ba2ed295"},
 		},
 		{
 			Name: "base with tests should not have same hash as no tests if tests included",
@@ -316,7 +316,7 @@ func TestProjectChunk_hash(t *testing.T) {
 			Base:         "",
 			BaseRef:      "",
 			Chunk:        "base",
-			Expectation:  "a557385d3e9d012dd179eaf7569850107c4af1adf8d99eb0fc402727827fab14",
+			Expectation:  map[string]string{"base": "9548234ad00c759a443539823a08af24a7e4cafcda34956cfcf89e005d1582b1"},
 			IncludeTests: true,
 		},
 		{
@@ -337,7 +337,7 @@ func TestProjectChunk_hash(t *testing.T) {
 			Base:         "",
 			BaseRef:      "",
 			Chunk:        "base",
-			Expectation:  "cf686202a95f644d3767667c6172b6b29c4d225db23bcc8d17aa4bdb42224b58",
+			Expectation:  map[string]string{"base": "e1edf60be9936de9a8e53d56b3d3caab266a85910dd301f387f340da4ac986db"},
 			IncludeTests: true,
 		},
 		{
@@ -358,14 +358,14 @@ func TestProjectChunk_hash(t *testing.T) {
 			Base:        "",
 			BaseRef:     "",
 			Chunk:       "base",
-			Expectation: "550ccae3705ce9627190644ef89f404f94b8d6f9d13d8df537ca66080dd326b2",
+			Expectation: map[string]string{"base": "02e46ef9c6d86deea6ffb67b6cd04a99e3600bb8d2c01f60359ed7a1ba2ed295"},
 		},
 		{
 			Name:        "chunk only no tests",
 			Base:        "chunks",
 			BaseRef:     "",
 			Chunk:       "foobar",
-			Expectation: "fee0ceb7e0e5dd96ea24167ff3dc7fb31c88877cf165a37b1b35e6c7072e0993",
+			Expectation: map[string]string{"foobar": "6991b773b801a8eafb74dd95d5544d499ba1da5c9a677dbc5084dd6a03e5affa"},
 			FS: map[string]*fstest.MapFile{
 				"chunks/foobar/Dockerfile": {
 					Data: []byte("FROM ubuntu"),
@@ -377,7 +377,7 @@ func TestProjectChunk_hash(t *testing.T) {
 			Base:        "chunks",
 			BaseRef:     "",
 			Chunk:       "foobar",
-			Expectation: "fee0ceb7e0e5dd96ea24167ff3dc7fb31c88877cf165a37b1b35e6c7072e0993",
+			Expectation: map[string]string{"foobar": "6991b773b801a8eafb74dd95d5544d499ba1da5c9a677dbc5084dd6a03e5affa"},
 			FS: map[string]*fstest.MapFile{
 				"chunks/foobar/Dockerfile": {
 					Data: []byte("FROM ubuntu"),
@@ -401,7 +401,7 @@ func TestProjectChunk_hash(t *testing.T) {
 			Base:        "chunks",
 			BaseRef:     "",
 			Chunk:       "foobar",
-			Expectation: "f9e18ae354d33f5a9c317c89d7251ad323fb49b650031d5d5563a9693bcf2ae9",
+			Expectation: map[string]string{"foobar": "7eac1330365e4e8c08c95a343380693b435e00f6d9246f47e7194ce3d749d489"},
 			FS: map[string]*fstest.MapFile{
 				"chunks/foobar/Dockerfile": {
 					Data: []byte("FROM ubuntu"),
@@ -421,6 +421,32 @@ func TestProjectChunk_hash(t *testing.T) {
 			},
 			IncludeTests: true,
 		},
+		{
+			Name:    "chunk with variants should produce different hashes",
+			Base:    "chunks",
+			BaseRef: "",
+			Chunk:   "foobar",
+			Expectation: map[string]string{
+				"foobar:1.16.3": "1d6cf828c405001a5dcbf034c638dace2ae5ab20d27c6c33519a7f6b5ca3eae6",
+				"foobar:1.16.4": "983b53b4df52485fe2c4a7cdc005b957d03909459d4a10de3463cf4facf45ee2",
+			},
+			FS: map[string]*fstest.MapFile{
+				"chunks/foobar/Dockerfile": {
+					Data: []byte("FROM ubuntu"),
+				},
+				"chunks/foobar/chunk.yaml": {
+					Data: []byte(`variants:
+- name: "1.16.3"
+  args:
+    GO_VERSION: 1.16.3
+- name: "1.16.4"
+  args:
+    GO_VERSION: 1.16.4
+`),
+				},
+			},
+			IncludeTests: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -430,16 +456,17 @@ func TestProjectChunk_hash(t *testing.T) {
 				t.Errorf("could not load chunks: %v", err)
 				return
 			}
-			if len(chks) != 1 {
-				t.Error("can only test 1 chunk prohect")
-				return
+
+			act := make(map[string]string, len(chks))
+			for _, chk := range chks {
+				hash, err := chk.hash(test.BaseRef, !test.IncludeTests)
+				if err != nil {
+					t.Errorf("could not compute hash: %v", err)
+					return
+				}
+				act[chk.Name] = hash
 			}
-			chk := chks[0]
-			act, err := chk.hash(test.BaseRef, !test.IncludeTests)
-			if err != nil {
-				t.Errorf("could not compute hash: %v", err)
-				return
-			}
+
 			if diff := cmp.Diff(test.Expectation, act); diff != "" {
 				t.Errorf("hash() mismatch (-want +got):\n%s", diff)
 			}
