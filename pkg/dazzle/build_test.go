@@ -29,7 +29,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -38,6 +37,7 @@ import (
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/docker/distribution/reference"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/moby/buildkit/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -346,30 +346,13 @@ func TestProjectChunk_test_integration(t *testing.T) {
 			return
 		}
 
-		// regexes for tags we expect
-		// NOTE: order is important
-		expectedTagsRE := []string{
-			`base--[[:alnum:]]+$`,
-			`basic--[[:alnum:]]+--chunked$`,
-			`basic--[[:alnum:]]+--full$`,
-			`basic--[[:alnum:]]+--test$`,
-			`basic--[[:alnum:]]+--test-result$`,
-		}
-
-		// Should match 'as-is'
-		if len(expectedTagsRE) != len(tagResp.Tags) {
-			t.Errorf("mismatched tag lengths, got:%s, want%d", tagResp.Tags, len(expectedTagsRE))
-			return
-		}
-		sort.Strings(tagResp.Tags)
-		for i, tag := range tagResp.Tags {
-			re := expectedTagsRE[i]
-			matched, err := regexp.MatchString(re, tag)
-			if !matched || err != nil {
-				t.Errorf("tags mismatch\nwant:%s\n got:%s\n err:%s)", re, tag, err)
-				return
-			}
-		}
+		expectAllTags(t, tagResp.Tags, map[string]int{
+			`base--[[:alnum:]]+$`:               1,
+			`basic--[[:alnum:]]+--chunked$`:     1,
+			`basic--[[:alnum:]]+--full$`:        1,
+			`basic--[[:alnum:]]+--test$`:        1,
+			`basic--[[:alnum:]]+--test-result$`: 1,
+		})
 	}
 
 	// Individually check each chunk to ensure it doesn't rebuild
@@ -433,34 +416,36 @@ func TestProjectChunk_test_integration(t *testing.T) {
 			t.Errorf("TestProjectChunk_test_integration() could not get decode tags from registry: %v", err)
 			return
 		}
-		sort.Strings(tagResp.Tags)
-		// NOTE: add another \n for consistency since the hashes can change the order
-		allTags := strings.Join(tagResp.Tags, "\n") + "\n"
-		if 7 != len(tagResp.Tags) {
-			t.Errorf("mismatched tag lengths, got:%s, want:7", allTags)
-			return
-		}
-		// regexes with counts for tags we expect
-		// NOTE: order is important
-		type expectedTag struct {
-			Regex string
-			Count int
-		}
-		expectedTags := []expectedTag{
-			{`base--[[:alnum:]]+\n`, 1},
-			{`basic--[[:alnum:]]+--chunked\n`, 1},
-			{`basic--[[:alnum:]]+--full\n`, 2},
-			{`basic--[[:alnum:]]+--test\n`, 2},
-			// NOTE: since tests pass the result is unchanged
-			{`basic--[[:alnum:]]+--test-result\n`, 1},
-		}
-		for _, expectedTag := range expectedTags {
-			re := regexp.MustCompile(expectedTag.Regex)
-			cnt := expectedTag.Count
-			matches := re.FindAllStringIndex(allTags, -1)
-			if cnt != len(matches) {
-				t.Errorf("tags mismatch for %s\nwant:%d\n got:%d\n \ntags:%s\nerr:%s)", expectedTag.Regex, cnt, len(matches), allTags, err)
+		expectAllTags(t, tagResp.Tags, map[string]int{
+			`base--[[:alnum:]]+$`:               1,
+			`basic--[[:alnum:]]+--chunked$`:     1,
+			`basic--[[:alnum:]]+--full$`:        1,
+			`basic--[[:alnum:]]+--test$`:        2,
+			`basic--[[:alnum:]]+--test-result$`: 1,
+		})
+	}
+}
+
+func expectAllTags(t *testing.T, tags []string, expectation map[string]int) {
+	// regexes for tags we expect
+	// NOTE: order is important
+	act := make(map[string]int)
+
+	// Should match 'as-is'
+	for pattern := range expectation {
+		for _, tag := range tags {
+			matched, err := regexp.MatchString(pattern, tag)
+			if err != nil {
+				t.Error(err)
+				continue
+			}
+			if matched {
+				act[pattern] = act[pattern] + 1
 			}
 		}
+	}
+
+	if diff := cmp.Diff(act, expectation); len(diff) != 0 {
+		t.Errorf("expected tags: %s\nbut got %v from\n\t%s", diff, act, strings.Join(tags, "\n\t"))
 	}
 }
