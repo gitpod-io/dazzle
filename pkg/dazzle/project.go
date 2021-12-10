@@ -425,11 +425,18 @@ func (p *ProjectChunk) manifest(baseref string, out io.Writer, excludeTests bool
 		res = append(res, fmt.Sprintf("%s:%s", strings.TrimPrefix(src, p.ContextPath), hex.EncodeToString(hash.Sum(nil))))
 	}
 
+	args := make([]string, 0, len(p.Args))
+	for k, v := range p.Args {
+		args = append(args, fmt.Sprintf("%s=%s", k, v))
+	}
+	sort.Strings(args)
+
 	if baseref != "" {
 		fmt.Fprintf(out, "Baseref: %s\n", baseref)
 	}
 	fmt.Fprintf(out, "Dockerfile: %s\n", string(p.Dockerfile))
 	fmt.Fprintf(out, "Sources:\n%s\n", strings.Join(res, "\n"))
+	fmt.Fprintf(out, "Args:\n%s\n", strings.Join(args, "\n"))
 	if !excludeTests {
 		tests, _ := yaml.Marshal(p.Tests)
 		fmt.Fprintf(out, "Tests:\n%s\n", string(tests))
