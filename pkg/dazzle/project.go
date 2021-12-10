@@ -125,7 +125,10 @@ type ProjectChunk struct {
 	Tests       []*test.Spec
 	Args        map[string]string
 
-	cachedHash string
+	cachedHash struct {
+		ExcludeTests string
+		WithTests    string
+	}
 }
 
 // LoadProjectConfig loads a dazzle project config file from disk
@@ -351,8 +354,14 @@ func loadChunks(dir fs.FS, contextBase, base, name string) (res []ProjectChunk, 
 }
 
 func (p *ProjectChunk) hash(baseref string, excludeTests bool) (res string, err error) {
-	if p.cachedHash != "" {
-		return p.cachedHash, nil
+	var cachedHash *string
+	if excludeTests {
+		cachedHash = &p.cachedHash.ExcludeTests
+	} else {
+		cachedHash = &p.cachedHash.WithTests
+	}
+	if *cachedHash != "" {
+		return *cachedHash, nil
 	}
 
 	defer func() {
@@ -372,7 +381,7 @@ func (p *ProjectChunk) hash(baseref string, excludeTests bool) (res string, err 
 	}
 
 	res = hex.EncodeToString(hash.Sum(nil))
-	p.cachedHash = res
+	*cachedHash = res
 	return
 }
 
@@ -483,4 +492,13 @@ func (p *ProjectChunk) PrintManifest(out io.Writer, sess *BuildSession) error {
 	}
 
 	return p.manifest(sess.baseRef.String(), out, false)
+}
+
+// PrintManifest prints the manifest to writer ... this is intended for debugging only
+func (p *ProjectChunk) Hash(out io.Writer, sess *BuildSession) (string, error) {
+	if sess.baseRef == nil {
+		return "", fmt.Errorf("base ref not set")
+	}
+
+	return p.hash(sess.baseRef.String(), sess.opts.NoTests)
 }
