@@ -1,4 +1,4 @@
-// Copyright © 2020 Christian Weichel
+// Copyright © 2020 Gitpod
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -18,11 +18,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+//go:build util
 // +build util
 
 package main
 
-import cmd "github.com/csweichel/dazzle/cmd/util"
+import cmd "github.com/gitpod-io/dazzle/cmd/util"
 
 func main() {
 	cmd.Execute()

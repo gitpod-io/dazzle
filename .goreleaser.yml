@@ -6,7 +6,7 @@ builds:
   env:
   - CGO_ENABLED=0
   ldflags:
-  - -s -w -X github.com/csweichel/dazzle/cmd/core.version={{.Version}}-{{.ShortCommit}}
+  - -s -w -X github.com/gitpod-io/dazzle/cmd/core.version={{.Version}}-{{.ShortCommit}}
 - id: dazzle-util
   env:
   - CGO_ENABLED=0
@@ -15,7 +15,7 @@ builds:
   flags:
     - -tags=util
   ldflags:
-  - -s -w -X github.com/csweichel/dazzle/cmd/util.version={{.Version}}-{{.ShortCommit}}
+  - -s -w -X github.com/gitpod-io/dazzle/cmd/util.version={{.Version}}-{{.ShortCommit}}
 archives:
 - id: dazzle
   replacements:

@@ -1,4 +1,4 @@
-// Copyright © 2020 Christian Weichel
+// Copyright © 2020 Gitpod
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,9 +27,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/csweichel/dazzle/pkg/test"
-	"github.com/csweichel/dazzle/pkg/test/buildkit"
 	"github.com/docker/distribution/reference"
+	"github.com/gitpod-io/dazzle/pkg/test"
+	"github.com/gitpod-io/dazzle/pkg/test/buildkit"
 	"github.com/moby/buildkit/client"
 	"github.com/opencontainers/go-digest"
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"

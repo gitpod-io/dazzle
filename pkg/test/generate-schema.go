@@ -1,4 +1,5 @@
-//+build ignore
+//go:build ignore
+// +build ignore
 
 package main
 
@@ -8,7 +9,7 @@ import (
 	"log"
 
 	"github.com/alecthomas/jsonschema"
-	"github.com/csweichel/dazzle/pkg/test"
+	"github.com/gitpod-io/dazzle/pkg/test"
 )
 
 func main() {

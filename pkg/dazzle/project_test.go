@@ -1,4 +1,4 @@
-// Copyright © 2020 Christian Weichel
+// Copyright © 2020 Gitpod
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -313,10 +313,10 @@ func TestProjectChunk_hash(t *testing.T) {
 `),
 				},
 			},
-			Base:        "",
-			BaseRef:     "",
-			Chunk:       "base",
-			Expectation: "a557385d3e9d012dd179eaf7569850107c4af1adf8d99eb0fc402727827fab14",
+			Base:         "",
+			BaseRef:      "",
+			Chunk:        "base",
+			Expectation:  "a557385d3e9d012dd179eaf7569850107c4af1adf8d99eb0fc402727827fab14",
 			IncludeTests: true,
 		},
 		{
@@ -334,10 +334,10 @@ func TestProjectChunk_hash(t *testing.T) {
 `),
 				},
 			},
-			Base:        "",
-			BaseRef:     "",
-			Chunk:       "base",
-			Expectation: "cf686202a95f644d3767667c6172b6b29c4d225db23bcc8d17aa4bdb42224b58",
+			Base:         "",
+			BaseRef:      "",
+			Chunk:        "base",
+			Expectation:  "cf686202a95f644d3767667c6172b6b29c4d225db23bcc8d17aa4bdb42224b58",
 			IncludeTests: true,
 		},
 		{

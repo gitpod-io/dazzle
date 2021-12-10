@@ -1,4 +1,4 @@
-// Copyright © 2020 Christian Weichel
+// Copyright © 2020 Gitpod
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -31,8 +31,8 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar"
-	"github.com/csweichel/dazzle/pkg/test"
 	"github.com/docker/distribution/reference"
+	"github.com/gitpod-io/dazzle/pkg/test"
 	"github.com/minio/highwayhash"
 	ignore "github.com/sabhiram/go-gitignore"
 	"gopkg.in/yaml.v2"

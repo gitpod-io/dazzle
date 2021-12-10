@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 
-	"github.com/csweichel/dazzle/pkg/test"
+	"github.com/gitpod-io/dazzle/pkg/test"
 )
 
 // Args produces the arguments which when passed on the the runner will execute the command

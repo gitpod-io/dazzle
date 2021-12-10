@@ -1,3 +1,4 @@
+//go:build runner
 // +build runner
 
 package main
@@ -10,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/csweichel/dazzle/pkg/test"
+	"github.com/gitpod-io/dazzle/pkg/test"
 )
 
 func main() {

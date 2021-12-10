@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/csweichel/dazzle/pkg/test"
-	"github.com/csweichel/dazzle/pkg/test/runner"
+	"github.com/gitpod-io/dazzle/pkg/test"
+	"github.com/gitpod-io/dazzle/pkg/test/runner"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/session"

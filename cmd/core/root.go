@@ -1,4 +1,4 @@
-// Copyright © 2020 Christian Weichel
+// Copyright © 2020 Gitpod
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -26,8 +26,8 @@ import (
 
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
-	"github.com/csweichel/dazzle/pkg/fancylog"
 	"github.com/docker/cli/cli/config"
+	"github.com/gitpod-io/dazzle/pkg/fancylog"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

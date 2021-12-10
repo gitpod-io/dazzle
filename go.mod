@@ -1,4 +1,4 @@
-module github.com/csweichel/dazzle
+module github.com/gitpod-io/dazzle
 
 go 1.16
 

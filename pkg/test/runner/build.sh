@@ -15,7 +15,7 @@ if [ -z "$RICEBIN" ]; then
   fi
 fi
 
-"$RICEBIN"/rice embed-go -i github.com/csweichel/dazzle/pkg/test/runner
+"$RICEBIN"/rice embed-go -i github.com/gitpod-io/dazzle/pkg/test/runner
 
 if [ $(ls -l bin/runner_linux_amd64 | cut -d ' ' -f 5) -gt 3437900 ]; then
     echo "runner binary is too big (> gRPC message size)"

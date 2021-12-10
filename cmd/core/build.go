@@ -1,4 +1,4 @@
-// Copyright © 2020 Christian Weichel
+// Copyright © 2020 Gitpod
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -23,7 +23,7 @@ package core
 import (
 	"context"
 
-	"github.com/csweichel/dazzle/pkg/dazzle"
+	"github.com/gitpod-io/dazzle/pkg/dazzle"
 	"github.com/moby/buildkit/client"
 	"github.com/spf13/cobra"
 )
