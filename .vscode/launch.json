@@ -19,6 +19,23 @@
             ]
         },
         {
+            "name": "Dazzle example combine",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${fileWorkspaceFolder}",
+            "args": [
+                "combine",
+                "--addr",
+                "unix:///run/buildkit/buildkitd.sock",
+                "--context",
+                "example",
+                "localhost:5000/dazzle",
+                "--all",
+                "."
+            ]
+        },
+        {
             "name": "Dazzle runner",
             "type": "go",
             "request": "launch",

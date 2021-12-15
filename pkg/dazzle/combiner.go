@@ -286,15 +286,15 @@ func mergeEnv(base *ociv1.Image, others []*ociv1.Image, vars []EnvVarCombination
 		envs[segs[0]] = segs[1]
 	}
 
-	for _, m := range others {
-		for _, e := range m.Config.Env {
-			segs := strings.Split(e, "=")
+	for _, ociImage := range others {
+		for _, imageEnvVars := range ociImage.Config.Env {
+			segs := strings.Split(imageEnvVars, "=")
 			if len(segs) != 2 {
-				return nil, fmt.Errorf("env var %s in invalid", e)
+				return nil, fmt.Errorf("env var %s in invalid", imageEnvVars)
 			}
 
 			k, v := segs[0], segs[1]
-			if ov, exists := envs[k]; exists {
+			if envValue, exists := envs[k]; exists {
 				action := EnvVarCombineUseFirst
 				for _, mv := range vars {
 					if mv.Name == k {
@@ -312,7 +312,7 @@ func mergeEnv(base *ociv1.Image, others []*ociv1.Image, vars []EnvVarCombination
 					envs[k] += ":" + v
 				case EnvVarCombineMergeUnique:
 					vs := make(map[string]struct{})
-					for _, s := range strings.Split(ov, ":") {
+					for _, s := range strings.Split(envValue, ":") {
 						vs[s] = struct{}{}
 					}
 					vs[v] = struct{}{}
@@ -323,9 +323,10 @@ func mergeEnv(base *ociv1.Image, others []*ociv1.Image, vars []EnvVarCombination
 					envs[k] = strings.Join(vss, ":")
 				}
 				log.WithFields(log.Fields{
-					"action":    action,
-					"name":      k,
-					"new-value": envs[k],
+					"action":     action,
+					"name":       k,
+					"image-vars": envValue,
+					"new-value":  envs[k],
 				}).Info("merged environment variable")
 
 				continue
