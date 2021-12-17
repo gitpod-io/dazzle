@@ -76,6 +76,7 @@ func (b *Executor) Run(ctx context.Context, spec *test.Spec) (rr *test.RunResult
 				authprovider.NewDockerAuthProvider(os.Stderr),
 			},
 		}, ch)
+		log.WithField("solvestatuserr", err).Debug("solve status")
 		if err != nil {
 			return err
 		}
