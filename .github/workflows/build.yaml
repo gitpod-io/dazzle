@@ -17,7 +17,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@v1
         with:
-          go-version: '1.17.2'
+          go-version: '1.17.5'
       - name: Download all Go modules
         run: |
           go mod download
@@ -35,7 +35,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@v1
         with:
-          go-version: '1.17.2'
+          go-version: '1.17.5'
       - name: Restore go build cache
         uses: actions/cache@v1
         with:
@@ -70,16 +70,12 @@ jobs:
         ports:
           - 5000:5000
     steps:
-      - name: Create checkout directory
-        run: mkdir -p ~/go/src/github.com/gitpod-io
       - name: Checkout code
         uses: actions/checkout@v2
-      - name: Create symlink in GOPATH
-        run: ln -s $(pwd) ~/go/src/github.com/gitpod-io/dazzle
       - name: Setup Golang
         uses: actions/setup-go@v1
         with:
-          go-version: '1.17.2'
+          go-version: '1.17.5'
       - name: Restore go build cache
         uses: actions/cache@v1
         with:
@@ -120,16 +116,12 @@ jobs:
     needs:
       - build-go
     steps:
-      - name: Create checkout directory
-        run: mkdir -p ~/go/src/github.com/gitpod-io
       - name: Checkout code
         uses: actions/checkout@v2
-      - name: Create symlink in GOPATH
-        run: ln -s $(pwd) ~/go/src/github.com/gitpod-io/dazzle
       - name: Setup Golang
         uses: actions/setup-go@v1
         with:
-          go-version: '1.17.2'
+          go-version: '1.17.5'
       - name: Restore go build cache
         uses: actions/cache@v1
         with:
