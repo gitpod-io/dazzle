@@ -170,7 +170,7 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 	for _, chk := range p.Chunks {
 		_, _, err := chk.test(ctx, session)
 		if err != nil {
-			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
+			return fmt.Errorf("cannot test chunk %s: %w", chk.Name, err)
 		}
 
 		_, _, err = chk.build(ctx, session)
