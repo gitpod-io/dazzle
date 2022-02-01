@@ -145,14 +145,16 @@ combiner:
     - node
 ```
 
-### Testing layers and merged images
-During a dazzle build one can test the individual layers and the final image.
+## Testing Chunks and Combinations
+
+During a dazzle build one can test the individual chunks and the combination images.
 During the build dazzle will execute the layer tests for each individual layer, as well as the final image.
 This makes finding and debugging issues created by the layer merge process tractable.
 
 Each chunk gets its own set of tests found under `tests/chunk.yaml`.
 
 For example:
+
 ```YAML
 - desc: "it should demonstrate tests"
   command: ["echo", "hello world"]
@@ -170,18 +172,63 @@ For example:
   - MESSAGE=foobar
   assert:
   - stdout.trim() == "foobar"
+- desc: "it should have right binary version"
+  entrypoint: [bash, -i, -c]
+  command: [foo -version]
+  assert:
+  - stderr.indexOf("1.8.0_312") != -1 
+
 ```
 
-### Assertions
+Following fields are available in the test spec.
+
+### `assert`
+
+Field `assert` is used to add assertions on the test.
+It accepts an array input.
 All test assertions are written in [ES5 Javascript](https://github.com/robertkrimen/otto).
 Three variables are available in an assertion:
+
 - `stdout` contains the standard output produced by the command
 - `stderr` contains the standard error output produced by the command
 - `status` contains the exit code of the command/container.
 
 The assertion itself must evaluate to a boolean value, otherwise the test fails.
 
-### Testing approach
+### `desc`
+
+Field `desc` is used to add description of the test.
+It accepts a string input.
+
+### `command`
+
+Field `command` contains the test command.
+It accepts an array of string.
+
+### `entrypoint`
+
+Field `entrypoint` defines the entrypoint in the image.
+This is especially handy when the default entrypoint of the image is not a shell.
+It accepts an array of string.
+
+### `skip`
+
+Field `skip` is used to decide if the test should run.
+It accepts a boolean input.
+
+### `user`
+
+Field `user` is used to define the user as whom the tests should run.
+It accepts a string input.
+
+
+### `env`
+
+Field `env` is used to define the user as whom the tests should run.
+It accepts an array of string.
+Each string is a key value pair separated by `=`.
+
+## Testing approach
 While the test runner is standalone, the linux+amd64 version is embedded into the dazzle binary using [go.rice](https://github.com/GeertJohan/go.rice) and go generate - see [build.sh](./pkg/test/runner/build.sh).
 TODO: use go:embed?
 Note that if you make changes to code in the test runner you will need to re-embed the runner into the binary in order to use it via dazzle.
@@ -205,7 +252,7 @@ $ go run pkg/test/runner/main.go eyJEZXNjIjoiaXQgc2hvdWxkIGhhdmUgR28gaW4gdmVyc2l
 go version go1.16.4 linux/amd64
 ```
 
-### Integration tests
+## Integration tests
 There is an integration test for the build command in pkg/dazzle/build_test.go - TestProjectChunk_test_integration and a shell script to run it. 
 The integration test does an end-to-end check along with editing a test and re-running to ensure only the test image is updated.
 
