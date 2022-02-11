@@ -11,7 +11,7 @@ require (
 	github.com/containerd/containerd v1.5.8
 	github.com/creack/pty v1.1.17
 	github.com/docker/cli v20.10.12+incompatible
-	github.com/docker/distribution v2.7.1+incompatible
+	github.com/docker/distribution v2.8.0+incompatible
 	github.com/google/go-cmp v0.5.6
 	github.com/gookit/color v1.5.0
 	github.com/manifoldco/promptui v0.9.0
