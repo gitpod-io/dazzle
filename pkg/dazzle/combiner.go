@@ -312,12 +312,8 @@ func mergeEnv(base *ociv1.Image, others []*ociv1.Image, vars []EnvVarCombination
 					envs[k] += ":" + v
 				case EnvVarCombineMergeUnique:
 					var vs []string
-					for _, s := range strings.Split(envValue, ":") {
-						vs = append(vs, s)
-					}
-					for _, s := range strings.Split(v, ":") {
-						vs = append(vs, s)
-					}
+					vs = append(vs, strings.Split(envValue, ":")...)
+					vs = append(vs, strings.Split(v, ":")...)
 
 					vss := []string{}
 					flags := make(map[string]bool)

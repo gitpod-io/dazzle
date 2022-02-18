@@ -27,8 +27,6 @@ import (
 )
 
 func TestMergeEnv(t *testing.T) {
-	type args struct {
-	}
 	tests := []struct {
 		name   string
 		base   *ociv1.Image
