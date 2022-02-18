@@ -27,54 +27,161 @@ import (
 )
 
 func TestMergeEnv(t *testing.T) {
-	base := ociv1.Image{
-		Config: ociv1.ImageConfig{
-			Env: []string{
-				"PATH=first:second:third:$PATH",
-			},
-		},
+	type args struct {
 	}
-	others := []*ociv1.Image{
+	tests := []struct {
+		name   string
+		base   *ociv1.Image
+		others []*ociv1.Image
+		vars   []EnvVarCombination
+		expect []string
+	}{
 		{
-			Config: ociv1.ImageConfig{
-				Env: []string{
-					"PATH=fourth:fifth:$PATH",
+			name: "EnvVarCombineMergeUnique",
+			base: &ociv1.Image{
+				Config: ociv1.ImageConfig{
+					Env: []string{
+						"PATH=first:second:third:$PATH",
+					},
 				},
 			},
-		},
-		{
-			Config: ociv1.ImageConfig{
-				Env: []string{
-					"PATH=sixth:sixth:$PATH",
+			others: []*ociv1.Image{
+				{
+					Config: ociv1.ImageConfig{
+						Env: []string{
+							"PATH=fourth:fifth:$PATH",
+						},
+					},
+				},
+				{
+					Config: ociv1.ImageConfig{
+						Env: []string{
+							"PATH=sixth:sixth:$PATH",
+						},
+					},
+				},
+				{
+					Config: ociv1.ImageConfig{
+						Env: []string{
+							"PATH=eighth:seventh:eighth:$PATH",
+						},
+					},
 				},
 			},
-		},
-		{
-			Config: ociv1.ImageConfig{
-				Env: []string{
-					"PATH=eighth:seventh:eighth:$PATH",
+			vars: []EnvVarCombination{
+				{
+					Name:   "PATH",
+					Action: EnvVarCombineMergeUnique,
 				},
 			},
+			expect: []string{"PATH=first:second:third:fourth:fifth:sixth:seventh:eighth:$PATH"},
 		},
-	}
-	vars := []EnvVarCombination{
 		{
-			Name:   "PATH",
-			Action: EnvVarCombineMergeUnique,
+			name: "EnvVarCombineMerge",
+			base: &ociv1.Image{
+				Config: ociv1.ImageConfig{
+					Env: []string{
+						"PATH=first:second:third:$PATH",
+					},
+				},
+			},
+			others: []*ociv1.Image{
+				{
+					Config: ociv1.ImageConfig{
+						Env: []string{
+							"PATH=fourth:fifth:$PATH",
+						},
+					},
+				},
+				{
+					Config: ociv1.ImageConfig{
+						Env: []string{
+							"PATH=sixth:sixth:$PATH",
+						},
+					},
+				},
+				{
+					Config: ociv1.ImageConfig{
+						Env: []string{
+							"PATH=eighth:seventh:eighth:$PATH",
+						},
+					},
+				},
+			},
+			vars: []EnvVarCombination{
+				{
+					Name:   "PATH",
+					Action: EnvVarCombineMerge,
+				},
+			},
+			expect: []string{"PATH=first:second:third:$PATH:fourth:fifth:$PATH:sixth:sixth:$PATH:eighth:seventh:eighth:$PATH"},
+		},
+		{
+			name: "EnvVarCombineUseLast",
+			base: &ociv1.Image{
+				Config: ociv1.ImageConfig{
+					Env: []string{
+						"PATH=first:second:third:$PATH",
+					},
+				},
+			},
+			others: []*ociv1.Image{
+				{
+					Config: ociv1.ImageConfig{
+						Env: []string{
+							"PATH=fourth:fifth:$PATH",
+						},
+					},
+				},
+			},
+			vars: []EnvVarCombination{
+				{
+					Name:   "PATH",
+					Action: EnvVarCombineUseLast,
+				},
+			},
+			expect: []string{"PATH=fourth:fifth:$PATH"},
+		},
+		{
+			name: "EnvVarCombineUseFirst",
+			base: &ociv1.Image{
+				Config: ociv1.ImageConfig{
+					Env: []string{
+						"PATH=first:second:third:$PATH",
+					},
+				},
+			},
+			others: []*ociv1.Image{
+				{
+					Config: ociv1.ImageConfig{
+						Env: []string{
+							"PATH=fourth:fifth:$PATH",
+						},
+					},
+				},
+			},
+			vars: []EnvVarCombination{
+				{
+					Name:   "PATH",
+					Action: EnvVarCombineUseFirst,
+				},
+			},
+			expect: []string{"PATH=first:second:third:$PATH"},
 		},
 	}
-	envs, err := mergeEnv(&base, others, vars)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expect := []string{"PATH=first:second:third:fourth:fifth:sixth:seventh:eighth:$PATH"}
-	if len(envs) != len(expect) {
-		t.Fatal("unexpected length", len(envs))
-	}
-	for i, env := range envs {
-		if env != expect[i] {
-			t.Fatal("unexpected env", envs)
+	for _, test := range tests {
+		envs, err := mergeEnv(test.base, test.others, test.vars)
+		if err != nil {
+			t.Fatal(err)
 		}
+		if len(envs) != len(test.expect) {
+			t.Fatal("unexpected length", len(envs))
+		}
+		for i, env := range envs {
+			if env != test.expect[i] {
+				t.Fatal("unexpected env", envs)
+			}
 
+		}
 	}
 }
