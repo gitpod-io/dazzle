@@ -23,6 +23,7 @@ package dazzle
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -39,7 +40,7 @@ func TestMergeEnv(t *testing.T) {
 			base: &ociv1.Image{
 				Config: ociv1.ImageConfig{
 					Env: []string{
-						"PATH=first:second:third:$PATH",
+						"PATH=first:second:third:common-value",
 					},
 				},
 			},
@@ -47,21 +48,21 @@ func TestMergeEnv(t *testing.T) {
 				{
 					Config: ociv1.ImageConfig{
 						Env: []string{
-							"PATH=fourth:fifth:$PATH",
+							"PATH=fourth:fifth:common-value",
 						},
 					},
 				},
 				{
 					Config: ociv1.ImageConfig{
 						Env: []string{
-							"PATH=sixth:sixth:$PATH",
+							"PATH=sixth:sixth:common-value",
 						},
 					},
 				},
 				{
 					Config: ociv1.ImageConfig{
 						Env: []string{
-							"PATH=eighth:seventh:eighth:$PATH",
+							"PATH=seventh:eighth:seventh:common-value",
 						},
 					},
 				},
@@ -72,14 +73,14 @@ func TestMergeEnv(t *testing.T) {
 					Action: EnvVarCombineMergeUnique,
 				},
 			},
-			expect: []string{"PATH=first:second:third:fourth:fifth:sixth:seventh:eighth:$PATH"},
+			expect: []string{"PATH=first:second:third:common-value:fourth:fifth:sixth:seventh:eighth"},
 		},
 		{
 			name: "EnvVarCombineMerge",
 			base: &ociv1.Image{
 				Config: ociv1.ImageConfig{
 					Env: []string{
-						"PATH=first:second:third:$PATH",
+						"PATH=first:second:third:common-value",
 					},
 				},
 			},
@@ -87,21 +88,21 @@ func TestMergeEnv(t *testing.T) {
 				{
 					Config: ociv1.ImageConfig{
 						Env: []string{
-							"PATH=fourth:fifth:$PATH",
+							"PATH=fourth:fifth:common-value",
 						},
 					},
 				},
 				{
 					Config: ociv1.ImageConfig{
 						Env: []string{
-							"PATH=sixth:sixth:$PATH",
+							"PATH=sixth:sixth:common-value",
 						},
 					},
 				},
 				{
 					Config: ociv1.ImageConfig{
 						Env: []string{
-							"PATH=eighth:seventh:eighth:$PATH",
+							"PATH=eighth:seventh:eighth:common-value",
 						},
 					},
 				},
@@ -112,14 +113,14 @@ func TestMergeEnv(t *testing.T) {
 					Action: EnvVarCombineMerge,
 				},
 			},
-			expect: []string{"PATH=first:second:third:$PATH:fourth:fifth:$PATH:sixth:sixth:$PATH:eighth:seventh:eighth:$PATH"},
+			expect: []string{"PATH=first:second:third:common-value:fourth:fifth:common-value:sixth:sixth:common-value:eighth:seventh:eighth:common-value"},
 		},
 		{
 			name: "EnvVarCombineUseLast",
 			base: &ociv1.Image{
 				Config: ociv1.ImageConfig{
 					Env: []string{
-						"PATH=first:second:third:$PATH",
+						"PATH=first:second:third:common-value",
 					},
 				},
 			},
@@ -127,7 +128,7 @@ func TestMergeEnv(t *testing.T) {
 				{
 					Config: ociv1.ImageConfig{
 						Env: []string{
-							"PATH=fourth:fifth:$PATH",
+							"PATH=fourth:fifth:common-value",
 						},
 					},
 				},
@@ -138,14 +139,14 @@ func TestMergeEnv(t *testing.T) {
 					Action: EnvVarCombineUseLast,
 				},
 			},
-			expect: []string{"PATH=fourth:fifth:$PATH"},
+			expect: []string{"PATH=fourth:fifth:common-value"},
 		},
 		{
 			name: "EnvVarCombineUseFirst",
 			base: &ociv1.Image{
 				Config: ociv1.ImageConfig{
 					Env: []string{
-						"PATH=first:second:third:$PATH",
+						"PATH=first:second:third:common-value",
 					},
 				},
 			},
@@ -153,7 +154,7 @@ func TestMergeEnv(t *testing.T) {
 				{
 					Config: ociv1.ImageConfig{
 						Env: []string{
-							"PATH=fourth:fifth:$PATH",
+							"PATH=fourth:fifth:common-value",
 						},
 					},
 				},
@@ -164,22 +165,18 @@ func TestMergeEnv(t *testing.T) {
 					Action: EnvVarCombineUseFirst,
 				},
 			},
-			expect: []string{"PATH=first:second:third:$PATH"},
+			expect: []string{"PATH=first:second:third:common-value"},
 		},
 	}
 	for _, test := range tests {
-		envs, err := mergeEnv(test.base, test.others, test.vars)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(envs) != len(test.expect) {
-			t.Fatal("unexpected length", len(envs))
-		}
-		for i, env := range envs {
-			if env != test.expect[i] {
-				t.Fatal("unexpected env", envs)
+		t.Run(test.name, func(t *testing.T) {
+			envs, err := mergeEnv(test.base, test.others, test.vars)
+			if err != nil {
+				t.Fatal(err)
 			}
-
-		}
+			if diff := cmp.Diff(envs, test.expect); len(diff) != 0 {
+				t.Errorf("mergeEnv() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

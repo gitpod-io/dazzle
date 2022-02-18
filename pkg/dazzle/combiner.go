@@ -315,17 +315,16 @@ func mergeEnv(base *ociv1.Image, others []*ociv1.Image, vars []EnvVarCombination
 					vs = append(vs, strings.Split(envValue, ":")...)
 					vs = append(vs, strings.Split(v, ":")...)
 
-					vss := []string{}
-					flags := make(map[string]bool)
-					for i := len(vs) - 1; i >= 0; i-- {
-						entry := vs[i]
-						if _, value := flags[entry]; !value {
-							flags[entry] = true
-							vss = append(vss, entry)
+					var (
+						vss []string
+						idx = make(map[string]struct{})
+					)
+					for _, v := range vs {
+						if _, exists := idx[v]; exists {
+							continue
 						}
-					}
-					for i, j := 0, len(vss)-1; i < j; i, j = i+1, j-1 {
-						vss[i], vss[j] = vss[j], vss[i]
+						idx[v] = struct{}{}
+						vss = append(vss, v)
 					}
 					envs[k] = strings.Join(vss, ":")
 				}
