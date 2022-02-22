@@ -62,7 +62,7 @@ func TestMergeEnv(t *testing.T) {
 				{
 					Config: ociv1.ImageConfig{
 						Env: []string{
-							"PATH=seventh:eighth:seventh:common-value",
+							"PATH=eighth:seventh:eighth:common-value",
 						},
 					},
 				},
@@ -73,7 +73,7 @@ func TestMergeEnv(t *testing.T) {
 					Action: EnvVarCombineMergeUnique,
 				},
 			},
-			expect: []string{"PATH=first:second:third:common-value:fourth:fifth:sixth:seventh:eighth"},
+			expect: []string{"PATH=first:second:third:fourth:fifth:sixth:seventh:eighth:common-value"},
 		},
 		{
 			name: "EnvVarCombineMerge",
