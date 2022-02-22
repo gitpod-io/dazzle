@@ -311,14 +311,26 @@ func mergeEnv(base *ociv1.Image, others []*ociv1.Image, vars []EnvVarCombination
 				case EnvVarCombineMerge:
 					envs[k] += ":" + v
 				case EnvVarCombineMergeUnique:
-					vs := make(map[string]struct{})
-					for _, s := range strings.Split(envValue, ":") {
-						vs[s] = struct{}{}
+					var vs []string
+					vs = append(vs, strings.Split(envValue, ":")...)
+					vs = append(vs, strings.Split(v, ":")...)
+
+					var (
+						vss []string
+						idx = make(map[string]struct{})
+					)
+					lenVS := len(vs) - 1
+					for i := range vs {
+						v := vs[lenVS-i]
+						if _, exists := idx[v]; exists {
+							continue
+						}
+						idx[v] = struct{}{}
+						vss = append(vss, v)
 					}
-					vs[v] = struct{}{}
-					vss := make([]string, 0, len(vs))
-					for s := range vs {
-						vss = append(vss, s)
+
+					for i, j := 0, len(vss)-1; i < j; i, j = i+1, j-1 {
+						vss[i], vss[j] = vss[j], vss[i]
 					}
 					envs[k] = strings.Join(vss, ":")
 				}
