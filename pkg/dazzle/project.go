@@ -197,9 +197,6 @@ func LoadFromDir(contextBase string, opts LoadFromDirOpts) (*Project, error) {
 
 	res.Chunks = make([]ProjectChunk, 0, len(chds))
 	for _, chd := range chds {
-		if cfg.chunkIgnores != nil && cfg.chunkIgnores.MatchesPath(chd.Name()) {
-			continue
-		}
 		if strings.HasPrefix(chd.Name(), "_") || strings.HasPrefix(chd.Name(), ".") {
 			continue
 		}
@@ -210,10 +207,27 @@ func LoadFromDir(contextBase string, opts LoadFromDirOpts) (*Project, error) {
 		if err != nil {
 			return nil, err
 		}
-		res.Chunks = append(res.Chunks, chnk...)
+
+		res.Chunks = append(res.Chunks, filterChunks(chnk, cfg.chunkIgnores)...)
 	}
 
 	return res, nil
+}
+
+func filterChunks(chunks []ProjectChunk, ignores *ignore.GitIgnore) []ProjectChunk {
+	if ignores == nil {
+		return chunks
+	}
+
+	filtered := make([]ProjectChunk, 0)
+	for _, chunk := range chunks {
+		if ignores.MatchesPath(chunk.Name) {
+			continue
+		}
+		filtered = append(filtered, chunk)
+	}
+
+	return filtered
 }
 
 func resolveCombinations(ipt []ChunkCombination) ([]ChunkCombination, error) {
