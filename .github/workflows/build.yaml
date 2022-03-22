@@ -1,11 +1,9 @@
 name: Unit tests
 on:
+  pull_request:
   push:
     branches:
-      - 'main'
-  pull_request:
-    branches:
-      - 'main'
+      - main
 
 jobs:
   check-go:
