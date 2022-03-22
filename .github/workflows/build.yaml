@@ -1,11 +1,9 @@
 name: Unit tests
 on:
+  pull_request:
   push:
     branches:
-      - 'main'
-  pull_request:
-    branches:
-      - 'main'
+      - main
 
 jobs:
   check-go:
@@ -93,7 +91,7 @@ jobs:
         run: |
           sudo --non-interactive --shell <<END_SUDO
             install -d -m 0750 -o root -g docker /run/buildkit
-            buildkitd &
+            buildkitd --oci-worker-snapshotter=stargz &
             while ! test -S /run/buildkit/buildkitd.sock; do sleep 0.1; done
             chgrp docker /run/buildkit/buildkitd.sock
           END_SUDO

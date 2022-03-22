@@ -500,8 +500,11 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 				{
 					Type: "image",
 					Attrs: map[string]string{
-						"name": dest.String(),
-						"push": "true",
+						"name":              dest.String(),
+						"push":              "true",
+						"compression":       "estargz",
+						"oci-mediatypes":    "true",
+						"force-compression": "true",
 					},
 				},
 			},
@@ -685,8 +688,11 @@ func (p *ProjectChunk) buildImage(ctx context.Context, tpe ChunkImageType, sess 
 				{
 					Type: "image",
 					Attrs: map[string]string{
-						"name": tgt.String(),
-						"push": "true",
+						"name":              tgt.String(),
+						"push":              "true",
+						"compression":       "estargz",
+						"oci-mediatypes":    "true",
+						"force-compression": "true",
 					},
 				},
 			},
