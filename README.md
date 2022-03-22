@@ -6,7 +6,7 @@
 
 dazzle is a rather experimental Docker/OCI image builder. Its goal is to build independent layers where a change to one layer does *not* invalidate the ones sitting "above" it.
 
-**Beware** Recently the format for [dazzle builds was changed](https://github.com/gitpod-io/dazzle/commit/ceaa19ef6562e03108c8ea9474d2c627a452a7ca), moving from a single Dockerfile to one per "chunk"/layer. It is also about 5x faster, more reliable and less hacky. 
+**Beware** Recently the format for [dazzle builds was changed](https://github.com/gitpod-io/dazzle/commit/ceaa19ef6562e03108c8ea9474d2c627a452a7ca), moving from a single Dockerfile to one per "chunk"/layer. It is also about 5x faster, more reliable and less hacky.
 
 ## How does it work?
 dazzle has three main capabilities.
@@ -15,28 +15,31 @@ dazzle has three main capabilities.
 3. _run tests against images_: to ensure that an image is capable of what we think it should be - especially after merging - dazzle supports simple tests and assertions that run against Docker images.
 
 ## Would I want to use this?
+
 Not ordinarily, no. For example, if you're packing your service/app/software/unicorn you're probably better of with a regular Docker image build and well established means for optimizing that one (think multi-stage builds, proper layer ordering).
 
 If however you are building images which consist of a lot of independent "concerns", i.e. chunks that can be strictly separated, then this might for you.
 For example, if you're building an image that serves as a collection of tools, the layer hierarchy imposed by regular builds doesn't fit so well.
 
 ## Limitations and caveats
+
 - build args are not supported at the moment
 - there are virtually no tests covering this so things might just break
 - consider this alpha-level software
 
 ### Requirements
-Install and run [buildkit](https://github.com/moby/buildkit/releases) - currently 0.8.3 - in the background.
+Install and run [buildkit](https://github.com/moby/buildkit/releases) - currently 0.10.0 - in the background.
 Pull and run a docker registry.
 
-NOTE: if you are running it in Gitpod this is done for you! 
+NOTE: if you are running it in Gitpod this is done for you!
 
 ```bash
-sudo su -c "cd /usr; curl -L https://github.com/moby/buildkit/releases/download/v0.8.3/buildkit-v0.8.3.linux-amd64.tar.gz | tar xvz"
+sudo su -c "cd /usr; curl -L https://github.com/moby/buildkit/releases/download/v0.10.0/buildkit-v0.10.0.linux-amd64.tar.gz | tar xvz"
 docker run -p 5000:5000 --name registry --rm registry:2
 ```
 
 ## Getting started
+
 ```bash
 # start a new project
 dazzle project init
@@ -44,7 +47,7 @@ dazzle project init
 # add our first chunk
 dazzle project init helloworld
 echo hello world > chunks/helloworld/hello.txt
-echo "COPY hello.txt /" >> chunks/helloworld/Dockerfile 
+echo "COPY hello.txt /" >> chunks/helloworld/Dockerfile
 
 # add another chunk, just for fun
 dazzle project init anotherchunk
@@ -64,7 +67,8 @@ dazzle combine eu.gcr.io/some-project/dazzle-test --all
 # Usage
 
 ## init
-```
+
+```shell
 $ dazzle project init
 Starts a new dazzle project
 
@@ -83,7 +87,8 @@ Global Flags:
 Starts a new dazzle project. If you don't know where to start, this is the place.
 
 ## build
-```
+
+```shell
 $ dazzle build --help
 Builds a Docker image with independent layers
 
@@ -107,7 +112,8 @@ Dazzle can build regular Docker files much like `docker build` would. `build` wi
 Dazzle cannot reproducibly build layers but can only re-use previously built ones. To ensure reusable layers and maximize Docker cache hits, dazzle itself caches the layers it builds in a Docker registry.
 
 ## combine
-```
+
+```shell
 $ dazzle combine --help
 Combines previously built chunks into a single image
 
@@ -132,6 +138,7 @@ Dazzle can combine previously built chunks into a single image. For example `daz
 One can pre-register such chunk combinations using `dazzle project add-combination`.
 
 The `dazzle.yaml` file specifies the list of available combinations. Those combinations can also reference each other:
+
 ```yaml
 combiner:
   combinations:
@@ -176,7 +183,7 @@ For example:
   entrypoint: [bash, -i, -c]
   command: [foo -version]
   assert:
-  - stderr.indexOf("1.8.0_312") != -1 
+  - stderr.indexOf("1.8.0_312") != -1
 
 ```
 
@@ -229,9 +236,11 @@ It accepts an array of string.
 Each string is a key value pair separated by `=`.
 
 ## Testing approach
+
 While the test runner is standalone, the linux+amd64 version is embedded into the dazzle binary using [go.rice](https://github.com/GeertJohan/go.rice) and go generate - see [build.sh](./pkg/test/runner/build.sh).
 TODO: use go:embed?
 Note that if you make changes to code in the test runner you will need to re-embed the runner into the binary in order to use it via dazzle.
+
 ```bash
 go generate ./...
 ```
@@ -240,6 +249,7 @@ The test runner binary is extracted and copied to the generated image where it i
 The exit code, stdout & stderr are captured and returned for evaluation against the assertions in the test specification.
 
 While of limited practical use, it is *possible* to run the test runner standalone using a base64-encoded JSON blob as a parameter:
+
 ```bash
 $ go run pkg/test/runner/main.go eyJEZXNjIjoiaXQgc2hvdWxkIGhhdmUgR28gaW4gdmVyc2lvbiAxLjEzIiwiU2tpcCI6ZmFsc2UsIlVzZXIiOiIiLCJDb21tYW5kIjpbImdvIiwidmVyc2lvbiJdLCJFbnRyeXBvaW50IjpudWxsLCJFbnYiOm51bGwsIkFzc2VydGlvbnMiOlsic3Rkb3V0LmluZGV4T2YoXCJnbzEuMTFcIikgIT0gLTEiXX0=
 {"Stdout":"Z28gdmVyc2lvbiBnbzEuMTYuNCBsaW51eC9hbWQ2NAo=","Stderr":"","StatusCode":0}
@@ -247,13 +257,15 @@ $ go run pkg/test/runner/main.go eyJEZXNjIjoiaXQgc2hvdWxkIGhhdmUgR28gaW4gdmVyc2l
 
 The stdout/err are returned as base64-encoded values.
 They can be extracted using jq e.g.:
+
 ```bash
 $ go run pkg/test/runner/main.go eyJEZXNjIjoiaXQgc2hvdWxkIGhhdmUgR28gaW4gdmVyc2lvbiAxLjEzIiwiU2tpcCI6ZmFsc2UsIlVzZXIiOiIiLCJDb21tYW5kIjpbImdvIiwidmVyc2lvbiJdLCJFbnRyeXBvaW50IjpudWxsLCJFbnYiOm51bGwsIkFzc2VydGlvbnMiOlsic3Rkb3V0LmluZGV4T2YoXCJnbzEuMTFcIikgIT0gLTEiXX0= | jq -r '.Stdout | @base64d'
 go version go1.16.4 linux/amd64
 ```
 
 ## Integration tests
-There is an integration test for the build command in pkg/dazzle/build_test.go - TestProjectChunk_test_integration and a shell script to run it. 
+
+There is an integration test for the build command in pkg/dazzle/build_test.go - TestProjectChunk_test_integration and a shell script to run it.
 The integration test does an end-to-end check along with editing a test and re-running to ensure only the test image is updated.
 
 It requires a running Buildkitd instance at unix:///run/buildkit/buildkitd.sock and a docker registry on 127.0.0.1:5000 (i.e. as this workspace is setup on startup).
