@@ -322,6 +322,9 @@ func removeBaseLayer(ctx context.Context, opts removeBaseLayerOpts) (chkmf *ociv
 		return
 	}
 
+	// Replace default manifest type  (application/vnd.docker.distribution.manifest.v2+json if not defined with the OCI one)
+	chkmf.MediaType = ociv1.MediaTypeImageManifest
+
 	chkmf.Config = ociv1.Descriptor{
 		MediaType: ociv1.MediaTypeImageConfig,
 		Digest:    digest.FromBytes(ncfg),
