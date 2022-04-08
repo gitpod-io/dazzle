@@ -28,13 +28,13 @@ For example, if you're building an image that serves as a collection of tools, t
 - consider this alpha-level software
 
 ### Requirements
-Install and run [buildkit](https://github.com/moby/buildkit/releases) - currently 0.10.0 - in the background.
+Install and run [buildkit](https://github.com/moby/buildkit/releases) - currently 0.10.1 - in the background.
 Pull and run a docker registry.
 
 NOTE: if you are running it in Gitpod this is done for you!
 
 ```bash
-sudo su -c "cd /usr; curl -L https://github.com/moby/buildkit/releases/download/v0.10.0/buildkit-v0.10.0.linux-amd64.tar.gz | tar xvz"
+sudo su -c "cd /usr; curl -L https://github.com/moby/buildkit/releases/download/v0.10.1/buildkit-v0.10.1.linux-amd64.tar.gz | tar xvz"
 docker run -p 5000:5000 --name registry --rm registry:2
 ```
 
