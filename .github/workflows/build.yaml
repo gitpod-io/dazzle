@@ -11,9 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Setup Golang
-        uses: actions/setup-go@v1
+        uses: actions/setup-go@v3
         with:
           go-version: '1.17.5'
       - name: Download all Go modules
@@ -29,9 +29,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Setup Golang
-        uses: actions/setup-go@v1
+        uses: actions/setup-go@v3
         with:
           go-version: '1.17.5'
       - name: Restore go build cache
@@ -48,11 +48,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v2
+        uses: actions/checkout@v3
+      - name: Setup Golang
+        uses: actions/setup-go@v3
         with:
-          version: v1.39.0
+          go-version: '1.17.5'
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3.1.0
+        with:
+          version: v1.45.2
           args: --timeout 5m
 
   test-go:
@@ -69,9 +73,9 @@ jobs:
           - 5000:5000
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Setup Golang
-        uses: actions/setup-go@v1
+        uses: actions/setup-go@v3
         with:
           go-version: '1.17.5'
       - name: Restore go build cache
@@ -86,7 +90,7 @@ jobs:
         run: pushd pkg/test/runner; ./build.sh; popd
       - name: Install the latest buildkit release
         run: |
-          curl -sSL "https://github.com/moby/buildkit/releases/download/v0.10.0/buildkit-v0.10.0.linux-amd64.tar.gz" | sudo tar -xz -C /usr/local
+          curl -sSL "https://github.com/moby/buildkit/releases/download/v0.10.1/buildkit-v0.10.1.linux-amd64.tar.gz" | sudo tar -xz -C /usr/local
       - name: Start buildkit daemon
         run: |
           sudo --non-interactive --shell <<END_SUDO
@@ -113,9 +117,9 @@ jobs:
       - build-go
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Setup Golang
-        uses: actions/setup-go@v1
+        uses: actions/setup-go@v3
         with:
           go-version: '1.17.5'
       - name: Restore go build cache
@@ -136,7 +140,7 @@ jobs:
       - test-go
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
       - name: Create test-results directory

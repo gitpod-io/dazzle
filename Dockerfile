@@ -1,4 +1,4 @@
-FROM moby/buildkit:v0.9.3
+FROM moby/buildkit:v0.10.1
 WORKDIR /dazzle
 COPY dazzle README.md /dazzle/
 ENV PATH=/dazzle:$PATH
