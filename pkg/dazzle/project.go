@@ -331,7 +331,7 @@ func loadChunks(dir fs.FS, contextBase, base, name string) (res []ProjectChunk, 
 		} else if err != nil {
 			return nil, fmt.Errorf("%s: cannot read tests.yaml: %w", dir, err)
 		}
-		err = yaml.UnmarshalStrict(tf, &chk.Tests)
+		err = yaml.Unmarshal(tf, &chk.Tests)
 		if err != nil {
 			return &chk, fmt.Errorf("%s: cannot read tests.yaml: %w", dir, err)
 		}
