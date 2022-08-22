@@ -1,9 +1,10 @@
 package fancylog
 
 import (
+	"sort"
+
 	"github.com/gookit/color"
 	"github.com/sirupsen/logrus"
-	"sort"
 )
 
 // Formatter formats log output

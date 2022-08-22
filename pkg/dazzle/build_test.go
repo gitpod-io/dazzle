@@ -38,7 +38,6 @@ import (
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/docker/distribution/reference"
 	"github.com/google/go-cmp/cmp"
-
 	"github.com/moby/buildkit/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"

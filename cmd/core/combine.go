@@ -26,10 +26,11 @@ import (
 	"strings"
 
 	"github.com/docker/distribution/reference"
-	"github.com/gitpod-io/dazzle/pkg/dazzle"
 	"github.com/moby/buildkit/client"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/gitpod-io/dazzle/pkg/dazzle"
 )
 
 // combineCmd represents the build command

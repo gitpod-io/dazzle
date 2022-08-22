@@ -28,12 +28,13 @@ import (
 	"time"
 
 	"github.com/docker/distribution/reference"
-	"github.com/gitpod-io/dazzle/pkg/test"
-	"github.com/gitpod-io/dazzle/pkg/test/buildkit"
 	"github.com/moby/buildkit/client"
 	"github.com/opencontainers/go-digest"
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/gitpod-io/dazzle/pkg/test"
+	"github.com/gitpod-io/dazzle/pkg/test/buildkit"
 )
 
 type combinerOpts struct {

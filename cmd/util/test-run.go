@@ -28,7 +28,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/gitpod-io/dazzle/pkg/fancylog"
 	"github.com/gitpod-io/dazzle/pkg/test"

@@ -32,10 +32,11 @@ import (
 
 	"github.com/bmatcuk/doublestar"
 	"github.com/docker/distribution/reference"
-	"github.com/gitpod-io/dazzle/pkg/test"
 	"github.com/minio/highwayhash"
 	ignore "github.com/sabhiram/go-gitignore"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
+
+	"github.com/gitpod-io/dazzle/pkg/test"
 )
 
 const (
