@@ -17,7 +17,7 @@ require (
 	github.com/manifoldco/promptui v0.9.0
 	github.com/mattn/go-isatty v0.0.16
 	github.com/minio/highwayhash v1.0.2
-	github.com/moby/buildkit v0.10.3
+	github.com/moby/buildkit v0.10.4
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799
 	github.com/robertkrimen/otto v0.0.0-20211024170158-b87d35c0b86f
