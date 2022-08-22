@@ -24,7 +24,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -376,7 +375,7 @@ func TestProjectChunk_test_integration(t *testing.T) {
     - "status == 0"
     - stdout.indexOf("xxx") != -1`)
 
-	err = ioutil.WriteFile(targetDir+"/tests/basic.yaml", newTest, 0644)
+	err = os.WriteFile(targetDir+"/tests/basic.yaml", newTest, 0644)
 	if err != nil {
 		t.Errorf("TestProjectChunk_test_integration() error:%v writing new test", err)
 		return

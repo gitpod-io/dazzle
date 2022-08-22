@@ -22,7 +22,6 @@ package core
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -43,7 +42,7 @@ var projectInitCmd = &cobra.Command{
 			if err != nil {
 				return
 			}
-			err = ioutil.WriteFile(filepath.Join("chunks", chk, "Dockerfile"), []byte("ARG base\nFROM ${base}\n\n"), 0755)
+			err = os.WriteFile(filepath.Join("chunks", chk, "Dockerfile"), []byte("ARG base\nFROM ${base}\n\n"), 0755)
 			if err != nil {
 				return
 			}
@@ -52,7 +51,7 @@ var projectInitCmd = &cobra.Command{
 			if err != nil && !os.IsExist(err) {
 				return
 			}
-			err = ioutil.WriteFile(fmt.Sprintf("tests/%s.yaml", chk), []byte("- desc: \"it should say hello\"\n  command: [\"echo\", \"hello\"]\n  assert:\n  - status == 0\n  - stdout.indexOf(\"hello\") != -1\n  - stderr.length == 0"), 0755)
+			err = os.WriteFile(fmt.Sprintf("tests/%s.yaml", chk), []byte("- desc: \"it should say hello\"\n  command: [\"echo\", \"hello\"]\n  assert:\n  - status == 0\n  - stdout.indexOf(\"hello\") != -1\n  - stderr.length == 0"), 0755)
 			if err != nil {
 				return
 			}
@@ -63,7 +62,7 @@ var projectInitCmd = &cobra.Command{
 		if err != nil {
 			return
 		}
-		err = ioutil.WriteFile("base/Dockerfile", []byte("FROM ubuntu:latest\n"), 0755)
+		err = os.WriteFile("base/Dockerfile", []byte("FROM ubuntu:latest\n"), 0755)
 		if err != nil {
 			return
 		}
