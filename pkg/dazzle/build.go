@@ -35,8 +35,6 @@ import (
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/docker/distribution/reference"
-	"github.com/gitpod-io/dazzle/pkg/test"
-	"github.com/gitpod-io/dazzle/pkg/test/buildkit"
 	"github.com/mattn/go-isatty"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
@@ -46,6 +44,9 @@ import (
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/gitpod-io/dazzle/pkg/test"
+	"github.com/gitpod-io/dazzle/pkg/test/buildkit"
 )
 
 var (
@@ -500,11 +501,9 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 				{
 					Type: "image",
 					Attrs: map[string]string{
-						"name":              dest.String(),
-						"push":              "true",
-						"compression":       "estargz",
-						"oci-mediatypes":    "true",
-						"force-compression": "true",
+						"name":           dest.String(),
+						"push":           "true",
+						"oci-mediatypes": "true",
 					},
 				},
 			},
@@ -688,11 +687,9 @@ func (p *ProjectChunk) buildImage(ctx context.Context, tpe ChunkImageType, sess 
 				{
 					Type: "image",
 					Attrs: map[string]string{
-						"name":              tgt.String(),
-						"push":              "true",
-						"compression":       "estargz",
-						"oci-mediatypes":    "true",
-						"force-compression": "true",
+						"name":           tgt.String(),
+						"push":           "true",
+						"oci-mediatypes": "true",
 					},
 				},
 			},

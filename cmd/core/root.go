@@ -27,9 +27,10 @@ import (
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/docker/cli/cli/config"
-	"github.com/gitpod-io/dazzle/pkg/fancylog"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/gitpod-io/dazzle/pkg/fancylog"
 )
 
 var rootCfg struct {

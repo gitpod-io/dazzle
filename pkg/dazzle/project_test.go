@@ -316,7 +316,7 @@ func TestProjectChunk_hash(t *testing.T) {
 			Base:         "",
 			BaseRef:      "",
 			Chunk:        "base",
-			Expectation:  map[string]string{"base": "9548234ad00c759a443539823a08af24a7e4cafcda34956cfcf89e005d1582b1"},
+			Expectation:  map[string]string{"base": "11f7021f65b55230c0e1105b1dc013d635a9a6d38e1476277df521400aec375a"},
 			IncludeTests: true,
 		},
 		{
@@ -337,7 +337,7 @@ func TestProjectChunk_hash(t *testing.T) {
 			Base:         "",
 			BaseRef:      "",
 			Chunk:        "base",
-			Expectation:  map[string]string{"base": "e1edf60be9936de9a8e53d56b3d3caab266a85910dd301f387f340da4ac986db"},
+			Expectation:  map[string]string{"base": "51ba9ff43996cf11afb5695b76b9e5d7c0134c83b27efc3063da8122069c4926"},
 			IncludeTests: true,
 		},
 		{

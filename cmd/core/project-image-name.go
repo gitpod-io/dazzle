@@ -24,8 +24,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gitpod-io/dazzle/pkg/dazzle"
 	"github.com/spf13/cobra"
+
+	"github.com/gitpod-io/dazzle/pkg/dazzle"
 )
 
 var projectImageNameOpts struct {

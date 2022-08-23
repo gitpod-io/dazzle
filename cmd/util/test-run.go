@@ -23,12 +23,11 @@ package util
 import (
 	"context"
 	"encoding/xml"
-	"io/ioutil"
 	"os"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/gitpod-io/dazzle/pkg/fancylog"
 	"github.com/gitpod-io/dazzle/pkg/test"
@@ -45,7 +44,7 @@ var testRunCmd = &cobra.Command{
 		var tests []*test.Spec
 
 		for _, fn := range testFiles {
-			fc, err := ioutil.ReadFile(fn)
+			fc, err := os.ReadFile(fn)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -68,7 +67,7 @@ var testRunCmd = &cobra.Command{
 				log.Fatal(err)
 			}
 
-			err = ioutil.WriteFile(xmlout, fc, 0644)
+			err = os.WriteFile(xmlout, fc, 0644)
 			if err != nil {
 				log.Fatal(err)
 			}

@@ -5,8 +5,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gitpod-io/dazzle/pkg/test"
-	"github.com/gitpod-io/dazzle/pkg/test/runner"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/session"
@@ -14,6 +12,9 @@ import (
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/gitpod-io/dazzle/pkg/test"
+	"github.com/gitpod-io/dazzle/pkg/test/runner"
 )
 
 // NewExecutor creates a new buildkit-backed executor

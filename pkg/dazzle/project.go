@@ -21,6 +21,7 @@
 package dazzle
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -32,10 +33,11 @@ import (
 
 	"github.com/bmatcuk/doublestar"
 	"github.com/docker/distribution/reference"
-	"github.com/gitpod-io/dazzle/pkg/test"
 	"github.com/minio/highwayhash"
 	ignore "github.com/sabhiram/go-gitignore"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
+
+	"github.com/gitpod-io/dazzle/pkg/test"
 )
 
 const (
@@ -330,7 +332,10 @@ func loadChunks(dir fs.FS, contextBase, base, name string) (res []ProjectChunk, 
 		} else if err != nil {
 			return nil, fmt.Errorf("%s: cannot read tests.yaml: %w", dir, err)
 		}
-		err = yaml.UnmarshalStrict(tf, &chk.Tests)
+
+		decoder := yaml.NewDecoder(bytes.NewReader(tf))
+		decoder.KnownFields(true)
+		err = decoder.Decode(&chk.Tests)
 		if err != nil {
 			return &chk, fmt.Errorf("%s: cannot read tests.yaml: %w", dir, err)
 		}

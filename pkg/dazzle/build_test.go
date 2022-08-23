@@ -24,7 +24,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -38,7 +37,6 @@ import (
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/docker/distribution/reference"
 	"github.com/google/go-cmp/cmp"
-
 	"github.com/moby/buildkit/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -377,7 +375,7 @@ func TestProjectChunk_test_integration(t *testing.T) {
     - "status == 0"
     - stdout.indexOf("xxx") != -1`)
 
-	err = ioutil.WriteFile(targetDir+"/tests/basic.yaml", newTest, 0644)
+	err = os.WriteFile(targetDir+"/tests/basic.yaml", newTest, 0644)
 	if err != nil {
 		t.Errorf("TestProjectChunk_test_integration() error:%v writing new test", err)
 		return

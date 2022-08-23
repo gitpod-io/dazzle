@@ -15,7 +15,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@v3
         with:
-          go-version: '1.17.5'
+          go-version: '1.19'
       - name: Download all Go modules
         run: |
           go mod download
@@ -33,7 +33,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@v3
         with:
-          go-version: '1.17.5'
+          go-version: '1.19'
       - name: Restore go build cache
         uses: actions/cache@v1
         with:
@@ -52,11 +52,10 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@v3
         with:
-          go-version: '1.17.5'
+          go-version: '1.19'
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v3.1.0
+        uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.45.2
           args: --timeout 5m
 
   test-go:
@@ -77,7 +76,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@v3
         with:
-          go-version: '1.17.5'
+          go-version: '1.19'
       - name: Restore go build cache
         uses: actions/cache@v1
         with:
@@ -90,12 +89,12 @@ jobs:
         run: pushd pkg/test/runner; ./build.sh; popd
       - name: Install the latest buildkit release
         run: |
-          curl -sSL "https://github.com/moby/buildkit/releases/download/v0.10.1/buildkit-v0.10.1.linux-amd64.tar.gz" | sudo tar -xz -C /usr/local
+          curl -sSL "https://github.com/moby/buildkit/releases/download/v0.10.4/buildkit-v0.10.4.linux-amd64.tar.gz" | sudo tar -xz -C /usr/local
       - name: Start buildkit daemon
         run: |
           sudo --non-interactive --shell <<END_SUDO
             install -d -m 0750 -o root -g docker /run/buildkit
-            buildkitd --oci-worker-snapshotter=stargz &
+            buildkitd &
             while ! test -S /run/buildkit/buildkitd.sock; do sleep 0.1; done
             chgrp docker /run/buildkit/buildkitd.sock
           END_SUDO
@@ -121,7 +120,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@v3
         with:
-          go-version: '1.17.5'
+          go-version: '1.19'
       - name: Restore go build cache
         uses: actions/cache@v1
         with:

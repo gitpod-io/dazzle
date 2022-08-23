@@ -25,7 +25,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/remotes"
@@ -161,7 +160,7 @@ func (r resolverRegistry) Pull(ctx context.Context, ref reference.Reference, cfg
 		return
 	}
 	defer manifestr.Close()
-	manifestraw, err := ioutil.ReadAll(manifestr)
+	manifestraw, err := io.ReadAll(manifestr)
 	if err != nil {
 		return
 	}
@@ -176,7 +175,7 @@ func (r resolverRegistry) Pull(ctx context.Context, ref reference.Reference, cfg
 		return
 	}
 	defer cfgr.Close()
-	cfgraw, err := ioutil.ReadAll(cfgr)
+	cfgraw, err := io.ReadAll(cfgr)
 	if err != nil {
 		return
 	}

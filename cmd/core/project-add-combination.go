@@ -24,8 +24,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gitpod-io/dazzle/pkg/dazzle"
 	"github.com/spf13/cobra"
+
+	"github.com/gitpod-io/dazzle/pkg/dazzle"
 )
 
 var projectAddCombinationCmd = &cobra.Command{

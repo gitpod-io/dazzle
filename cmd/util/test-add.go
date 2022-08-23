@@ -25,7 +25,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 
@@ -33,7 +32,7 @@ import (
 	"github.com/manifoldco/promptui"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/gitpod-io/dazzle/pkg/fancylog"
 	"github.com/gitpod-io/dazzle/pkg/test"
@@ -47,7 +46,7 @@ var testAddCmd = &cobra.Command{
 		log.SetFormatter(&fancylog.Formatter{})
 
 		fn := args[0]
-		fc, err := ioutil.ReadFile(fn)
+		fc, err := os.ReadFile(fn)
 		if err != nil && !os.IsNotExist(err) {
 			log.Fatal(err)
 		}
@@ -129,7 +128,7 @@ var testAddCmd = &cobra.Command{
 		}
 		fmt.Println(string(fc))
 
-		err = ioutil.WriteFile(args[0], fc, 0644)
+		err = os.WriteFile(args[0], fc, 0644)
 		if err != nil {
 			log.Fatal(err)
 		}

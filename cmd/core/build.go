@@ -23,9 +23,10 @@ package core
 import (
 	"context"
 
-	"github.com/gitpod-io/dazzle/pkg/dazzle"
 	"github.com/moby/buildkit/client"
 	"github.com/spf13/cobra"
+
+	"github.com/gitpod-io/dazzle/pkg/dazzle"
 )
 
 // buildCmd represents the build command
