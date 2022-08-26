@@ -59,9 +59,12 @@ type ProjectConfig struct {
 
 // ChunkCombination combines several chunks to a new image
 type ChunkCombination struct {
-	Name   string   `yaml:"name"`
-	Ref    []string `yaml:"ref"`
-	Chunks []string `yaml:"chunks"`
+	Name        string   `yaml:"name"`
+	Ref         []string `yaml:"ref"`
+	Chunks      []string `yaml:"chunks"`
+	Description string   `yaml:"description"`
+
+	LinkedChunks []*ProjectChunk `yaml:"-"`
 }
 
 // EnvVarCombination describes how env vars are combined
@@ -86,14 +89,16 @@ const (
 
 // ChunkConfig configures a chunk
 type ChunkConfig struct {
-	Variants []ChunkVariant `yaml:"variants"`
+	Variants    []ChunkVariant `yaml:"variants"`
+	Description string         `yaml:"description"`
 }
 
 // ChunkVariant is a variant of a chunk
 type ChunkVariant struct {
-	Name       string            `yaml:"name"`
-	Args       map[string]string `yaml:"args,omitempty"`
-	Dockerfile string            `yaml:"dockerfile,omitempty"`
+	Name        string            `yaml:"name"`
+	Args        map[string]string `yaml:"args,omitempty"`
+	Dockerfile  string            `yaml:"dockerfile,omitempty"`
+	Description string            `yaml:"description"`
 }
 
 // Write writes this config as YAML to a file
@@ -213,6 +218,31 @@ func LoadFromDir(contextBase string, opts LoadFromDirOpts) (*Project, error) {
 		res.Chunks = append(res.Chunks, filterChunks(chnk, cfg.chunkIgnores)...)
 	}
 
+	for i, comb := range cfg.Combiner.Combinations {
+		var (
+			chunks       = cfg.Combiner.Combinations[i].Chunks
+			linkedChunks = make([]*ProjectChunk, len(chunks))
+		)
+
+		for j, cn := range chunks {
+			var found bool
+			for _, c := range res.Chunks {
+				if c.Name == cn {
+					linkedChunks[j] = &c
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				return nil, fmt.Errorf("combination %s: chunk %s not found", comb.Name, cn)
+			}
+		}
+
+		comb.LinkedChunks = linkedChunks
+		cfg.Combiner.Combinations[i] = comb
+	}
+
 	return res, nil
 }
 
@@ -237,6 +267,7 @@ func resolveCombinations(ipt []ChunkCombination) ([]ChunkCombination, error) {
 		Chunks map[string]struct{}
 		Ref    []string
 		Combs  []*Comb
+		Desc   string
 	}
 	idx := make(map[string]*Comb)
 	for _, c := range ipt {
@@ -247,6 +278,7 @@ func resolveCombinations(ipt []ChunkCombination) ([]ChunkCombination, error) {
 		idx[c.Name] = &Comb{
 			Ref:    c.Ref,
 			Chunks: chks,
+			Desc:   c.Description,
 		}
 	}
 	for n, c := range idx {
@@ -291,8 +323,9 @@ func resolveCombinations(ipt []ChunkCombination) ([]ChunkCombination, error) {
 		}
 		sort.Strings(chunks)
 		res = append(res, ChunkCombination{
-			Name:   n,
-			Chunks: chunks,
+			Name:        n,
+			Chunks:      chunks,
+			Description: c.Desc,
 		})
 	}
 

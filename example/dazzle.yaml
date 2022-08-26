@@ -1,6 +1,7 @@
 combiner:
   combinations:
   - name: all
+    description: Combines all chunks in this project
     chunks:
     - golang:1.16.3
     - node:14.17.0
