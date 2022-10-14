@@ -85,6 +85,20 @@ var combineCmd = &cobra.Command{
 			bldref = targetref.String()
 		}
 
+		var compression dazzle.Compression
+		c, err := cmd.Flags().GetString("compression")
+		if err != nil {
+			return err
+		}
+		switch c {
+		case "gzip":
+			compression = dazzle.Gzip
+		case "zstd":
+			compression = dazzle.Zstd
+		default:
+			return fmt.Errorf("unknow a compression type: %s", c)
+		}
+
 		cl, err := client.New(context.Background(), rootCfg.BuildkitAddr, client.WithFailFast())
 		if err != nil {
 			return err
@@ -112,7 +126,7 @@ var combineCmd = &cobra.Command{
 			}
 
 			log.WithField("combination", cmb.Name).WithField("chunks", cmb.Chunks).WithField("ref", destref.String()).Warn("producing chunk combination")
-			err = prj.Combine(context.Background(), cmb.Chunks, destref, sess, opts...)
+			err = prj.Combine(context.Background(), cmb.Chunks, destref, sess, compression, opts...)
 			if err != nil {
 				return err
 			}
@@ -130,4 +144,5 @@ func init() {
 	combineCmd.Flags().String("combination", "", "build a specific combination")
 	combineCmd.Flags().Bool("all", false, "build all combinations")
 	combineCmd.Flags().String("build-ref", "", "use a different build-ref than the target-ref")
+	combineCmd.Flags().String("compression", "gzip", "compression type for layers")
 }

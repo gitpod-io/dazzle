@@ -62,7 +62,7 @@ func asTempBuild(o *combinerOpts) error {
 
 // Combine combines a set of previously built chunks into a single image while maintaining
 // the layer identity.
-func (p *Project) Combine(ctx context.Context, chunks []string, dest reference.Named, sess *BuildSession, opts ...CombinerOpt) (err error) {
+func (p *Project) Combine(ctx context.Context, chunks []string, dest reference.Named, sess *BuildSession, compression Compression, opts ...CombinerOpt) (err error) {
 	var options combinerOpts
 	for _, o := range opts {
 		err = o(&options)
@@ -78,7 +78,7 @@ func (p *Project) Combine(ctx context.Context, chunks []string, dest reference.N
 		if err != nil {
 			return err
 		}
-		err = p.Combine(ctx, chunks, tmpdest, sess, append(opts, asTempBuild)...)
+		err = p.Combine(ctx, chunks, tmpdest, sess, compression, append(opts, asTempBuild)...)
 		if err != nil {
 			return err
 		}

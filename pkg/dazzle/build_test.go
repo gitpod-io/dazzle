@@ -51,12 +51,13 @@ func TestProjectChunk_test(t *testing.T) {
 	sess.opts.Resolver = fakeResolver{}
 
 	type fields struct {
-		Name     string
-		FS       map[string]*fstest.MapFile
-		Base     string
-		Chunk    string
-		BaseRef  string
-		Registry Registry
+		Name        string
+		FS          map[string]*fstest.MapFile
+		Base        string
+		Chunk       string
+		BaseRef     string
+		Compression Compression
+		Registry    Registry
 	}
 	type args struct {
 		ctx  context.Context
@@ -72,9 +73,10 @@ func TestProjectChunk_test(t *testing.T) {
 		{
 			name: "passes with no tests",
 			fields: fields{
-				Name:  "no test chunk",
-				Base:  "chunks",
-				Chunk: "notest",
+				Name:        "no test chunk",
+				Base:        "chunks",
+				Chunk:       "notest",
+				Compression: Gzip,
 				FS: map[string]*fstest.MapFile{
 					"chunks/notest/Dockerfile": {
 						Data: []byte("FROM alpine"),
@@ -91,9 +93,10 @@ func TestProjectChunk_test(t *testing.T) {
 		{
 			name: "fails when no base reference set",
 			fields: fields{
-				Name:  "no base ref chunk",
-				Base:  "chunks",
-				Chunk: "nobaseref",
+				Name:        "no base ref chunk",
+				Base:        "chunks",
+				Chunk:       "nobaseref",
+				Compression: Gzip,
 				FS: map[string]*fstest.MapFile{
 					"chunks/nobaseref/Dockerfile": {
 						Data: []byte("FROM alpine"),
@@ -118,9 +121,10 @@ func TestProjectChunk_test(t *testing.T) {
 		{
 			name: "does not build if tests have passed",
 			fields: fields{
-				Name:  "a chunk",
-				Base:  "chunks",
-				Chunk: "foobar",
+				Name:        "a chunk",
+				Base:        "chunks",
+				Chunk:       "foobar",
+				Compression: Gzip,
 				FS: map[string]*fstest.MapFile{
 					"chunks/foobar/Dockerfile": {
 						Data: []byte("FROM alpine"),
@@ -140,6 +144,26 @@ func TestProjectChunk_test(t *testing.T) {
 					},
 				},
 				BaseRef: "localhost:9999/test@sha256:b25ab047a146b43a7a1bdd2b3346a05fd27dd2730af8ab06a9b8acca0f15b378",
+			},
+			args: args{
+				ctx:  ctx,
+				sess: sess,
+			},
+			wantOk:  true,
+			wantErr: false,
+		},
+		{
+			name: "passes with no tests with zstd",
+			fields: fields{
+				Name:        "no test chunk",
+				Base:        "chunks",
+				Chunk:       "notest",
+				Compression: Zstd,
+				FS: map[string]*fstest.MapFile{
+					"chunks/notest/Dockerfile": {
+						Data: []byte("FROM alpine"),
+					},
+				},
 			},
 			args: args{
 				ctx:  ctx,
@@ -175,7 +199,7 @@ func TestProjectChunk_test(t *testing.T) {
 			if tt.fields.Registry != nil {
 				sess.opts.Registry = tt.fields.Registry
 			}
-			gotOk, _, err := chks[0].test(tt.args.ctx, tt.args.sess)
+			gotOk, _, err := chks[0].test(tt.args.ctx, tt.args.sess, tt.fields.Compression)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("TestProjectChunk_test() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -286,7 +310,7 @@ func TestProjectChunk_test_integration(t *testing.T) {
 		}
 	}
 
-	err = prj.Build(context.Background(), session)
+	err = prj.Build(context.Background(), session, Gzip)
 	if err != nil {
 		t.Errorf("TestProjectChunk_test_integration.test() unexpected Build error = %v", err)
 		return
@@ -318,7 +342,7 @@ func TestProjectChunk_test_integration(t *testing.T) {
 	}
 
 	// Re-running build should reuse existing images & tags
-	err = prj.Build(context.Background(), session)
+	err = prj.Build(context.Background(), session, Gzip)
 	if err != nil {
 		t.Errorf("TestProjectChunk_test_integration() unexpected rebuild 1 error = %v", err)
 		return
@@ -355,13 +379,13 @@ func TestProjectChunk_test_integration(t *testing.T) {
 
 	// Individually check each chunk to ensure it doesn't rebuild
 	for _, chk := range prj.Chunks {
-		ok, didRun, err := chk.test(ctx, session)
+		ok, didRun, err := chk.test(ctx, session, Gzip)
 		if err != nil || !ok || didRun {
 			t.Errorf("TestProjectChunk_test_integration() test() error:%v testing chunk: %s with results: %v:%v", err, chk.Name, ok, didRun)
 			return
 		}
 
-		_, didBuild, err := chk.build(ctx, session)
+		_, didBuild, err := chk.build(ctx, session, Gzip)
 		if err != nil || didBuild {
 			t.Errorf("TestProjectChunk_test_integration() build() error:%v building chunk: %s didBuild:%v", err, chk.Name, didBuild)
 			return
@@ -389,7 +413,7 @@ func TestProjectChunk_test_integration(t *testing.T) {
 	}
 
 	// Re-running build should create new test tags
-	err = prj.Build(context.Background(), session)
+	err = prj.Build(context.Background(), session, Gzip)
 	if err != nil {
 		t.Errorf("TestProjectChunk_test_integration() unexpected rebuild 2 error = %v", err)
 		return

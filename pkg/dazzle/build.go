@@ -126,7 +126,7 @@ func WithChunkedWithoutHash(enable bool) BuildOpt {
 }
 
 // Build builds all images in a project
-func (p *Project) Build(ctx context.Context, session *BuildSession) error {
+func (p *Project) Build(ctx context.Context, session *BuildSession, compression Compression) error {
 	ctx = clog.WithLogger(ctx, log.NewEntry(log.New()))
 
 	// Relying on the buildkit cache alone does not result in fixed content hashes.
@@ -141,7 +141,7 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 	}
 
 	log.WithField("ref", baseref.String()).Warn("building base image")
-	absbaseref, err := p.Base.buildAsBase(ctx, baseref, session)
+	absbaseref, err := p.Base.buildAsBase(ctx, baseref, session, compression)
 	if err != nil {
 		return fmt.Errorf("cannot build base image: %w", err)
 	}
@@ -169,12 +169,12 @@ func (p *Project) Build(ctx context.Context, session *BuildSession) error {
 	session.baseBuildFinished(absbaseref, basemf, basecfg)
 
 	for _, chk := range p.Chunks {
-		_, _, err := chk.test(ctx, session)
+		_, _, err := chk.test(ctx, session, compression)
 		if err != nil {
 			return fmt.Errorf("cannot test chunk %s: %w", chk.Name, err)
 		}
 
-		_, _, err = chk.build(ctx, session)
+		_, _, err = chk.build(ctx, session, compression)
 		if err != nil {
 			return fmt.Errorf("cannot build chunk %s: %w", chk.Name, err)
 		}
@@ -281,7 +281,7 @@ func (s *BuildSession) baseBuildFinished(ref reference.Digested, mf *ociv1.Manif
 	s.baseCfg = cfg
 }
 
-func removeBaseLayer(ctx context.Context, opts removeBaseLayerOpts) (chkmf *ociv1.Manifest, didbuild bool, err error) {
+func removeBaseLayer(ctx context.Context, opts removeBaseLayerOpts, compression Compression) (chkmf *ociv1.Manifest, didbuild bool, err error) {
 	_, chkmf, chkcfg, err := getImageMetadata(ctx, opts.chunkref, opts.registry)
 	if err != nil {
 		return
@@ -334,7 +334,7 @@ func removeBaseLayer(ctx context.Context, opts removeBaseLayerOpts) (chkmf *ociv
 	}
 	chkmf.Layers = chkmf.Layers[len(opts.basemf.Layers):]
 	for i := range chkmf.Layers {
-		chkmf.Layers[i].MediaType = ociv1.MediaTypeImageLayerGzip
+		chkmf.Layers[i].MediaType = compression.Extension()
 	}
 	if chkmf.Annotations == nil {
 		chkmf.Annotations = make(map[string]string)
@@ -465,7 +465,7 @@ func (p *Project) BaseRef(build reference.Named) (reference.NamedTagged, error) 
 	return reference.WithTag(build, fmt.Sprintf("base--%s", hash))
 }
 
-func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, sess *BuildSession) (absref reference.Digested, err error) {
+func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, sess *BuildSession, compression Compression) (absref reference.Digested, err error) {
 	_, desc, err := sess.opts.Resolver.Resolve(ctx, dest.String())
 	if err == nil {
 		// if err == nil the image exists already
@@ -504,6 +504,7 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 						"name":           dest.String(),
 						"push":           "true",
 						"oci-mediatypes": "true",
+						"compression":    compression.String(),
 					},
 				},
 			},
@@ -552,7 +553,7 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 	return resref, nil
 }
 
-func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, didRun bool, err error) {
+func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession, compression Compression) (ok bool, didRun bool, err error) {
 	if sess == nil {
 		return false, false, errors.New("cannot test without a session")
 	}
@@ -574,7 +575,7 @@ func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, d
 	}
 
 	// build temp image for testing
-	testRef, _, err := p.buildImage(ctx, ImageTypeTest, sess)
+	testRef, _, err := p.buildImage(ctx, ImageTypeTest, sess, compression)
 	if err != nil {
 		return false, false, err
 	}
@@ -600,9 +601,9 @@ func (p *ProjectChunk) test(ctx context.Context, sess *BuildSession) (ok bool, d
 	return true, true, nil
 }
 
-func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef reference.NamedTagged, didBuild bool, err error) {
+func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession, compression Compression) (chkRef reference.NamedTagged, didBuild bool, err error) {
 	// build actual full image
-	fullRef, didBuild, err := p.buildImage(ctx, ImageTypeFull, sess)
+	fullRef, didBuild, err := p.buildImage(ctx, ImageTypeFull, sess, compression)
 	if err != nil {
 		return
 	}
@@ -618,7 +619,7 @@ func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef re
 	}
 	log.WithField("chunk", p.Name).WithField("ref", chkRef).Warn("building chunked image")
 	opts := removeBaseLayerOpts{sess.opts.Resolver, sess.opts.Registry, sess.baseRef, sess.baseMF, sess.baseCfg, fullRef, chkRef}
-	mf, didBuild, err := removeBaseLayer(ctx, opts)
+	mf, didBuild, err := removeBaseLayer(ctx, opts, compression)
 	if err != nil {
 		return
 	}
@@ -628,7 +629,7 @@ func (p *ProjectChunk) build(ctx context.Context, sess *BuildSession) (chkRef re
 	return
 }
 
-func (p *ProjectChunk) buildImage(ctx context.Context, tpe ChunkImageType, sess *BuildSession) (tgt reference.Named, didBuild bool, err error) {
+func (p *ProjectChunk) buildImage(ctx context.Context, tpe ChunkImageType, sess *BuildSession, compression Compression) (tgt reference.Named, didBuild bool, err error) {
 	tgt, err = p.ImageName(tpe, sess)
 	if err != nil {
 		return
@@ -690,6 +691,7 @@ func (p *ProjectChunk) buildImage(ctx context.Context, tpe ChunkImageType, sess 
 						"name":           tgt.String(),
 						"push":           "true",
 						"oci-mediatypes": "true",
+						"compression":    compression.String(),
 					},
 				},
 			},

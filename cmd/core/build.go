@@ -22,6 +22,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/moby/buildkit/client"
 	"github.com/spf13/cobra"
@@ -60,7 +61,21 @@ var buildCmd = &cobra.Command{
 			return err
 		}
 
-		err = prj.Build(context.Background(), session)
+		var compression dazzle.Compression
+		c, err := cmd.Flags().GetString("compression")
+		if err != nil {
+			return err
+		}
+		switch c {
+		case "gzip":
+			compression = dazzle.Gzip
+		case "zstd":
+			compression = dazzle.Zstd
+		default:
+			return fmt.Errorf("unknow a compression type: %s", c)
+		}
+
+		err = prj.Build(context.Background(), session, compression)
 		if err != nil {
 			return err
 		}
@@ -77,4 +92,5 @@ func init() {
 	buildCmd.Flags().Bool("no-cache", false, "disables the buildkit build cache")
 	buildCmd.Flags().Bool("plain-output", false, "produce plain output")
 	buildCmd.Flags().Bool("chunked-without-hash", false, "disable hash qualification for chunked image")
+	buildCmd.Flags().String("compression", "gzip", "compression type for layers")
 }
