@@ -8,7 +8,7 @@ require (
 	github.com/alecthomas/repr v0.1.0
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/containerd/console v1.0.3
-	github.com/containerd/containerd v1.6.8
+	github.com/containerd/containerd v1.6.12
 	github.com/creack/pty v1.1.18
 	github.com/docker/cli v20.10.17+incompatible
 	github.com/docker/distribution v2.8.1+incompatible
@@ -29,6 +29,7 @@ require (
 )
 
 require (
+	cloud.google.com/go v0.57.0 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/containerd/continuity v0.3.0 // indirect
@@ -48,9 +49,11 @@ require (
 	github.com/iancoleman/orderedmap v0.0.0-20190318233801-ac98e3ecb4b0 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/klauspost/compress v1.15.7 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/sys/signal v0.6.0 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
+	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/tonistiigi/fsutil v0.0.0-20220510150904-0dbf3a8a7d58 // indirect
@@ -64,13 +67,14 @@ require (
 	go.opentelemetry.io/otel/trace v1.4.1 // indirect
 	go.opentelemetry.io/proto/otlp v0.12.0 // indirect
 	golang.org/x/crypto v0.0.0-20220315160706-3147a52a75dd // indirect
-	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd // indirect
+	golang.org/x/net v0.0.0-20220722155237-a158d28d115b // indirect
 	golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20220210224613-90d013bbcef8 // indirect
-	google.golang.org/genproto v0.0.0-20220310185008-1973136f34c6 // indirect
+	google.golang.org/genproto v0.0.0-20220502173005-c8bf987b8c21 // indirect
 	google.golang.org/grpc v1.47.0 // indirect
-	google.golang.org/protobuf v1.27.1 // indirect
+	google.golang.org/protobuf v1.28.0 // indirect
+	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 	gopkg.in/sourcemap.v1 v1.0.5 // indirect
 )
 
