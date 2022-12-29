@@ -7,6 +7,9 @@ builds:
   - CGO_ENABLED=0
   ldflags:
   - -s -w -X github.com/gitpod-io/dazzle/cmd/core.version={{.Version}}-{{.ShortCommit}}
+  goos:
+  - darwin
+  - linux
 - id: dazzle-util
   env:
   - CGO_ENABLED=0
@@ -16,6 +19,9 @@ builds:
     - -tags=util
   ldflags:
   - -s -w -X github.com/gitpod-io/dazzle/cmd/util.version={{.Version}}-{{.ShortCommit}}
+  goos:
+  - darwin
+  - linux
 archives:
 - id: dazzle
   replacements:
