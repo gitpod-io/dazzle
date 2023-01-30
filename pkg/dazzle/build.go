@@ -34,6 +34,7 @@ import (
 	clog "github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
+	"github.com/docker/cli/cli/config"
 	"github.com/docker/distribution/reference"
 	"github.com/mattn/go-isatty"
 	"github.com/moby/buildkit/client"
@@ -489,13 +490,14 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 
 	rchan := make(chan map[string]string, 1)
 	eg.Go(func() error {
+		dockerConfig := config.LoadDefaultConfigFile(os.Stderr)
 		resp, err := sess.Client.Solve(ctx, nil, client.SolveOpt{
 			Frontend:      "dockerfile.v0",
 			CacheImports:  []client.CacheOptionsEntry{cacheImport},
 			CacheExports:  []client.CacheOptionsEntry{cacheExport},
 			FrontendAttrs: make(map[string]string),
 			Session: []session.Attachable{
-				authprovider.NewDockerAuthProvider(os.Stderr),
+				authprovider.NewDockerAuthProvider(dockerConfig),
 			},
 			Exports: []client.ExportEntry{
 				{
@@ -675,13 +677,14 @@ func (p *ProjectChunk) buildImage(ctx context.Context, tpe ChunkImageType, sess 
 
 	rchan := make(chan map[string]string, 1)
 	eg.Go(func() error {
+		dockerConfig := config.LoadDefaultConfigFile(os.Stderr)
 		resp, err := sess.Client.Solve(ctx, nil, client.SolveOpt{
 			Frontend:      "dockerfile.v0",
 			FrontendAttrs: attrs,
 			CacheImports:  cacheImports,
 			CacheExports:  cacheExports,
 			Session: []session.Attachable{
-				authprovider.NewDockerAuthProvider(os.Stderr),
+				authprovider.NewDockerAuthProvider(dockerConfig),
 			},
 			Exports: []client.ExportEntry{
 				{
