@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/docker/cli/cli/config"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/session"
@@ -72,9 +73,10 @@ func (b *Executor) Run(ctx context.Context, spec *test.Spec) (rr *test.RunResult
 	)
 	defer cancel()
 	eg.Go(func() error {
+		dockerConfig := config.LoadDefaultConfigFile(os.Stderr)
 		_, err := b.cl.Solve(bctx, def, client.SolveOpt{
 			Session: []session.Attachable{
-				authprovider.NewDockerAuthProvider(os.Stderr),
+				authprovider.NewDockerAuthProvider(dockerConfig),
 			},
 		}, ch)
 		if err != nil {
