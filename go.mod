@@ -8,7 +8,7 @@ require (
 	github.com/alecthomas/repr v0.1.0
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/containerd/console v1.0.3
-	github.com/containerd/containerd v1.6.18
+	github.com/containerd/containerd v1.6.20
 	github.com/creack/pty v1.1.18
 	github.com/docker/cli v23.0.0-rc.3+incompatible
 	github.com/docker/distribution v2.8.1+incompatible
@@ -17,9 +17,9 @@ require (
 	github.com/manifoldco/promptui v0.9.0
 	github.com/mattn/go-isatty v0.0.16
 	github.com/minio/highwayhash v1.0.2
-	github.com/moby/buildkit v0.11.4
+	github.com/moby/buildkit v0.11.6
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.0.3-0.20220303224323-02efb9a75ee1
+	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
 	github.com/robertkrimen/otto v0.0.0-20211024170158-b87d35c0b86f
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/sirupsen/logrus v1.9.0
