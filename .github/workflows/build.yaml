@@ -89,7 +89,7 @@ jobs:
         run: pushd pkg/test/runner; ./build.sh; popd
       - name: Install the latest buildkit release
         run: |
-          curl -sSL "https://github.com/moby/buildkit/releases/download/v0.12.1/buildkit-v0.12.1.linux-amd64.tar.gz" | sudo tar -xz -C /usr/local
+          curl -sSL "https://github.com/moby/buildkit/releases/download/v0.12.4/buildkit-v0.12.4.linux-amd64.tar.gz" | sudo tar -xz -C /usr/local
       - name: Start buildkit daemon
         run: |
           sudo --non-interactive --shell <<END_SUDO
