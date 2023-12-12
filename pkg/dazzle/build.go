@@ -533,7 +533,7 @@ func (p *ProjectChunk) buildAsBase(ctx context.Context, dest reference.Named, se
 		}
 
 		// not using shared context to not disrupt display but let is finish reporting errors
-		_, err := progressui.DisplaySolveStatus(context.TODO(), "", c, os.Stderr, ch)
+		_, err := progressui.DisplaySolveStatus(context.TODO(), c, os.Stderr, ch)
 		return err
 	})
 	err = eg.Wait()
@@ -720,7 +720,7 @@ func (p *ProjectChunk) buildImage(ctx context.Context, tpe ChunkImageType, sess 
 		}
 
 		// not using shared context to not disrupt display but let is finish reporting errors
-		_, err := progressui.DisplaySolveStatus(context.TODO(), "", c, os.Stderr, ch)
+		_, err := progressui.DisplaySolveStatus(context.TODO(), c, os.Stderr, ch)
 		return err
 	})
 	err = eg.Wait()

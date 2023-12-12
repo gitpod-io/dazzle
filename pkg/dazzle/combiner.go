@@ -148,10 +148,8 @@ func (p *Project) Combine(ctx context.Context, chunks []string, dest reference.N
 
 	now := time.Now()
 	ccfg := ociv1.Image{
-		Created:      &now,
-		Architecture: basecfg.Architecture,
-		History:      allHist,
-		OS:           basecfg.OS,
+		Created: &now,
+		History: allHist,
 		Config: ociv1.ImageConfig{
 			StopSignal:   basecfg.Config.StopSignal,
 			Cmd:          basecfg.Config.Cmd,
